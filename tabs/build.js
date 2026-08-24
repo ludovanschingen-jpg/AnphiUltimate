@@ -23,15 +23,15 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Grille de sprites officielle (Obélisque supprimé, coordonnées des icônes calées à l'identique du gestionnaire classique)
+    // Coordonnées corrigées : Remparts et Comptoir permutés
     const SPRITES = { 
         academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
-        hide: [200, 0], ironer: [250, 0], trade_office: [300, 0], theater: [350, 0], 
+        hide: [200, 0], ironer: [250, 0], wall: [300, 0], theater: [350, 0], 
         lumber: [400, 0], main: [450, 0], 
         market: [0, 50], oracle: [100, 50], statue: [150, 50], 
         stoner: [200, 50], storage: [250, 50], temple: [300, 50], thermal: [350, 50], 
         library: [400, 50], lighthouse: [450, 50], 
-        wall: [0, 100], tower: [50, 100] 
+        trade_office: [0, 100], tower: [50, 100] 
     };
 
     const FR_TO_ID = { 
@@ -243,7 +243,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec le Gestionnaire de Ville inspiré des scripts classiques', 'info');
+        log('BUILD', 'Module initialisé avec les bonnes images pour les remparts et le comptoir', 'info');
     };
 
     module.isActive = function() {
