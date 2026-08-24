@@ -14,13 +14,13 @@
         oracle: 'Oracle', trade_office: 'Comptoir', theater: 'Théâtre' 
     };
     
-    // Coordonnées exactes et corrigées des sprites de bâtiments (50x50)
+    // Coordonnées de sprites entièrement réalignées et sans doublons (grille 50x50)
     const SPRITES = { 
-        main: [450, 0], storage: [250, 50], farm: [150, 0], academy: [0, 0], 
-        temple: [300, 50], barracks: [50, 0], docks: [100, 0], market: [0, 50], 
-        hide: [200, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
-        wall: [0, 100], thermal: [350, 50], library: [400, 50], lighthouse: [450, 50], 
-        tower: [100, 50], statue: [150, 50], oracle: [50, 50], trade_office: [300, 0], theater: [350, 0] 
+        main: [450, 0], lumber: [400, 0], farm: [150, 0], stoner: [200, 50], 
+        storage: [250, 50], ironer: [250, 0], barracks: [50, 0], temple: [300, 50], 
+        market: [0, 50], docks: [100, 0], academy: [0, 0], wall: [0, 100], 
+        hide: [200, 0], thermal: [350, 50], library: [400, 50], lighthouse: [450, 50], 
+        tower: [50, 50], statue: [150, 50], oracle: [100, 50], trade_office: [300, 0], theater: [350, 0] 
     };
 
     const FR_TO_ID = { 
@@ -231,7 +231,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec sprites corrigés & prérequis', 'info');
+        log('BUILD', 'Module initialisé avec sprites corrigés et sans agora', 'info');
     };
 
     module.isActive = function() {
