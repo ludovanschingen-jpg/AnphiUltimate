@@ -13,12 +13,11 @@
         tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
     };
 
-    // Organisation exacte demandée
     const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Coordonnées de sprites rigoureusement alignées (grille 10 colonnes)
+    // Grille de sprites séquentielle, propre et sans doublons (50x50)
     const SPRITES = { 
         main: [0, 0], lumber: [50, 0], stoner: [100, 0], ironer: [150, 0], 
         storage: [200, 0], farm: [250, 0], barracks: [300, 0], docks: [350, 0], 
@@ -97,7 +96,7 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>🎨</span> Designer de Template Visuel</div>
+                    <div class="section-title"><span>🎨</span> Designer de Template</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
@@ -236,7 +235,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec icônes corrigées et agencement en blocs', 'info');
+        log('BUILD', 'Module initialisé avec sprites corrigés et alignés', 'info');
     };
 
     module.isActive = function() {
