@@ -17,7 +17,7 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Grille de sprites 10x3 exacte et réalignée (sans l'obélisque)
+    // Matrice de sprites officielle 10x3 réalignée (l'obélisque en [50,50] a été définitivement supprimé et remplacé par la Tour en [50,100])
     const SPRITES = { 
         academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
         hide: [200, 0], ironer: [250, 0], trade_office: [300, 0], theater: [350, 0], 
@@ -236,7 +236,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec les bonnes icônes et sans obélisque', 'info');
+        log('BUILD', 'Module initialisé avec les icônes officielles parfaitement alignées', 'info');
     };
 
     module.isActive = function() {
