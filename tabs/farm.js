@@ -6,7 +6,7 @@
     const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
     const GM_addStyle = module.GM_addStyle;
 
-    // Options de durées officielles acceptées par le serveur Grepolis
+    // Options de durées standard acceptées par le serveur Grepolis pour les requêtes de farm
     const DURATION_OPTIONS = {
         1: { label: '5 minutes',  base: 300,  booty: 600 },
         2: { label: '20 minutes', base: 1200, booty: 2400 }
@@ -14,7 +14,7 @@
 
     let farmData = {
         enabled: false,
-        settings: { mode: 'least_resources', duration: 1, webhook: '' },
+        settings: { mode: 'least_resources', webhook: '' },
         stats: { cycles: 0, totalRes: 0 },
         cycleCount: 0,
         interval: null,
@@ -99,7 +99,7 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>⏱️</span> Prochaine Récolte (10 à 17 min)</div>
+                    <div class="section-title"><span>⏱️</span> Prochaine Récolte (10 à 17 min aléatoires)</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
@@ -127,7 +127,7 @@
                         </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ Automatisation humaine : 2 tâches aléatoires (ouverture propre, pause, fermeture), puis récolte sécurisée, puis timer aléatoire (10-17 min).
+                        ℹ️ Automatisation : 2 onglets ouverts/fermés proprement, puis récolte standard, puis délai aléatoire entre 10 et 17 minutes.
                     </div>
                 </div>
             </div>
@@ -211,7 +211,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé (fermeture propre & serveur corrigé) initialisé', 'info');
+        log('FARM', 'Module humanisé (timer 10-17 min aléatoire) initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -266,7 +266,7 @@
         if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
     }
 
-    // ─── TIMER ALÉATOIRE ENTRE 10 ET 17 MINUTES ─────────────────────────────────
+    // ─── TIMER ALÉATOIRE STRICT ENTRE 10 ET 17 MINUTES ──────────────────────────
 
     function getRandomIntervalMs() {
         const minMins = 10;
@@ -302,7 +302,6 @@
                 log('FARM', `Ouverture de l'onglet : [${task.name}]`, 'info');
                 
                 if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
-                    // Création et récupération de l'instance de la fenêtre
                     const winInstance = uw.GPWindowMgr.Create(task.type);
 
                     // Temps d'attente "humain" entre 2 et 4 secondes
@@ -312,7 +311,6 @@
                     if (!farmData.enabled) break;
 
                     log('FARM', `Fermeture de l'onglet : [${task.name}]`, 'info');
-                    // Fermeture propre via l'instance ou le gestionnaire
                     if (winInstance && typeof winInstance.close === 'function') {
                         winInstance.close();
                     } else if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
@@ -336,10 +334,10 @@
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
-        // 1. DÉBUT DU CYCLE : Affichage du bouton "Stop current routine"
+        // 1. DÉBUT DU CYCLE ACTIF : Affichage du bouton "Stop current routine"
         showStopButton(true);
 
-        // Exécuter les 2 tâches aléatoires (ouverture -> attente -> fermeture systématique)
+        // Exécuter les 2 tâches aléatoires (ouverture -> attente 2-4s -> fermeture systématique)
         await performRandomHumanActions();
 
         if (!farmData.enabled) {
@@ -347,7 +345,7 @@
             return;
         }
 
-        // Exécuter la récolte des villages paysans avec les bons paramètres
+        // Exécuter la récolte des villages paysans
         await executeFarmClaim();
 
         if (!farmData.enabled) {
@@ -355,7 +353,7 @@
             return;
         }
 
-        // 2. FIN DU CYCLE : Masquage du bouton "Stop current routine"
+        // 2. FIN DE LA ROUTINE : Masquage du bouton "Stop current routine"
         showStopButton(false);
 
         // 3. Planifier le délai aléatoire entre 10 et 17 minutes pour le prochain passage
@@ -403,8 +401,8 @@
 
             if (!farmData.enabled) return;
 
-            // Utilisation des durées standard serveur valides (ex: option 1 = 5 min, option 2 = 20 min)
-            const activeOption = DURATION_OPTIONS[1]; 
+            // Utilisation d'une option de base standard valide (ex: option 1 = 5 min / booty 10 min)
+            const activeOption = DURATION_OPTIONS[1];
 
             await new Promise((resolve) => {
                 uw.gpAjax.ajaxPost('farm_town_overviews', 'claim_loads_multiple', {
