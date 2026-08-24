@@ -6,37 +6,30 @@
     const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
     const GM_addStyle = module.GM_addStyle;
 
-    // Durées de base selon le choix utilisateur (en secondes)
-    const DURATION_OPTIONS = {
-        1: { label: '5 minutes',  base: 300,  booty: 600,  intervalSec: 5  * 60 },
-        2: { label: '10 minutes', base: 600,  booty: 1200, intervalSec: 10 * 60 },
-        3: { label: '20 minutes', base: 1200, booty: 2400, intervalSec: 20 * 60 }
-    };
-
     let farmData = {
         enabled: false,
         settings: { mode: 'least_resources', duration: 1, webhook: '' },
         stats: { cycles: 0, totalRes: 0 },
         cycleCount: 0,
         interval: null,
-        nextRunTime: 0  // timestamp ms du prochain run
+        nextRunTime: 0
     };
 
-    // ─── STYLES DU BOUTON CENTRAL FLOTTANT (STYLE IMAGE) ─────────────────────────
+    // ─── STYLES DU BOUTON STOP ET HUD ────────────────────────────────────────────
 
     if (GM_addStyle) {
         GM_addStyle(`
-            .gu-centered-stop-overlay {
+            .gu-stop-routine-overlay {
                 position: fixed;
-                top: 50%;
+                top: 15px;
                 left: 50%;
-                transform: translate(-50%, -50%);
+                transform: translateX(-50%);
                 z-index: 9999999;
                 display: none;
                 font-family: 'Cinzel', 'Philosopher', Georgia, serif;
                 pointer-events: none;
             }
-            .gu-centered-stop-overlay.active {
+            .gu-stop-routine-overlay.active {
                 display: block;
                 pointer-events: auto;
             }
@@ -45,9 +38,9 @@
                 border: 2px solid #D4AF37;
                 border-radius: 6px;
                 color: #ffcccc;
-                padding: 12px 24px;
+                padding: 8px 18px;
                 font-family: 'Cinzel', serif;
-                font-size: 14px;
+                font-size: 12px;
                 font-weight: bold;
                 text-shadow: 0 1px 2px rgba(0,0,0,0.8);
                 box-shadow: 0 4px 20px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,215,0,0.3);
@@ -64,7 +57,7 @@
         `);
     }
 
-    // ─── UI DE L'ONGLET (SANS LE BOUTON D'ARRÊT) ─────────────────────────────────
+    // ─── UI DE L'ONGLET (SANS BOUTON STOP INTERNE) ───────────────────────────────
 
     module.render = function(container) {
         container.innerHTML = `
@@ -100,7 +93,7 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>⏱️</span> Prochaine Récolte (Jitter Actif)</div>
+                    <div class="section-title"><span>⏱️</span> Prochaine Récolte (10 à 17 min)</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
@@ -126,17 +119,9 @@
                                 <option value="round_robin">Cyclique</option>
                             </select>
                         </div>
-                        <div class="option-group">
-                            <span class="option-label">Intervalle de base</span>
-                            <select class="option-select" id="farm-duration">
-                                <option value="1">5 minutes</option>
-                                <option value="2">10 minutes</option>
-                                <option value="3">20 minutes</option>
-                            </select>
-                        </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ Intervalle cible : <strong id="farm-interval-label">5 minutes</strong> (avec 2 tâches aléatoires et pauses humaines).
+                        ℹ️ Automatisation complète : 2 tâches aléatoires (ouverture/fermeture) au début, puis récolte, puis timer aléatoire (10-17 min).
                     </div>
                 </div>
             </div>
@@ -155,27 +140,27 @@
         `;
     };
 
-    // ─── GESTION DU BOUTON CENTRAL FLOTTANT ──────────────────────────────────────
+    // ─── GESTION DU BOUTON STOP SUR L'ÉCRAN ──────────────────────────────────────
 
-    function createCenteredStopButton() {
-        if (document.getElementById('gu-centered-stop')) return;
+    function createStopButton() {
+        if (document.getElementById('gu-stop-routine')) return;
 
         const overlay = document.createElement('div');
-        overlay.id = 'gu-centered-stop';
-        overlay.className = 'gu-centered-stop-overlay';
+        overlay.id = 'gu-stop-routine';
+        overlay.className = 'gu-stop-routine-overlay';
         overlay.innerHTML = `
-            <button class="gu-stop-routine-btn" id="gu-stop-btn-action">Stop current routine</button>
+            <button class="gu-stop-routine-btn" id="gu-stop-action-btn">Stop current routine</button>
         `;
         document.body.appendChild(overlay);
 
-        document.getElementById('gu-stop-btn-action').onclick = () => emergencyStop();
+        document.getElementById('gu-stop-action-btn').onclick = () => emergencyStop();
     }
 
-    function showCenteredStopButton(show) {
-        let overlay = document.getElementById('gu-centered-stop');
+    function showStopButton(show) {
+        let overlay = document.getElementById('gu-stop-routine');
         if (!overlay && show) {
-            createCenteredStopButton();
-            overlay = document.getElementById('gu-centered-stop');
+            createStopButton();
+            overlay = document.getElementById('gu-stop-routine');
         }
         if (overlay) {
             if (show) overlay.classList.add('active');
@@ -187,14 +172,12 @@
 
     module.init = function() {
         loadData();
-        createCenteredStopButton();
+        createStopButton();
 
         document.getElementById('toggle-farm').checked    = farmData.enabled;
         document.getElementById('farm-mode').value        = farmData.settings.mode;
-        document.getElementById('farm-duration').value    = farmData.settings.duration;
         document.getElementById('farm-webhook').value     = farmData.settings.webhook || '';
         updateStats();
-        updateIntervalLabel();
 
         document.getElementById('toggle-farm').onchange = (e) => toggleFarm(e.target.checked);
 
@@ -202,18 +185,6 @@
             farmData.settings.mode = e.target.value;
             saveData();
             log('FARM', 'Mode: ' + (e.target.value === 'least_resources' ? 'Villes vides' : 'Cyclique'), 'info');
-        };
-
-        document.getElementById('farm-duration').onchange = (e) => {
-            farmData.settings.duration = parseInt(e.target.value);
-            saveData();
-            updateIntervalLabel();
-            const opt = DURATION_OPTIONS[farmData.settings.duration];
-            log('FARM', `Intervalle de base: ${opt.label}`, 'info');
-            if (farmData.enabled) {
-                clearTimeout(farmData.interval);
-                scheduleNext(getHumanizedDelayMs(opt.intervalSec));
-            }
         };
 
         document.getElementById('farm-webhook').onchange = (e) => {
@@ -234,7 +205,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé avec bouton central initialisé', 'info');
+        log('FARM', 'Module humanisé (10-17 min & tâches strictes) initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -253,14 +224,14 @@
         if (enabled) {
             if (ctrl) ctrl.classList.remove('inactive');
             if (status) status.textContent = 'Actif (Sécurisé)';
-            showCenteredStopButton(true);
-            log('FARM', 'Bot démarré avec bouton central actif', 'success');
+            showStopButton(true);
+            log('FARM', 'Auto Farm démarré', 'success');
             runFarmCycle();
         } else {
             if (ctrl) ctrl.classList.add('inactive');
             if (status) status.textContent = 'En attente';
-            showCenteredStopButton(false);
-            log('FARM', 'Bot arrêté', 'info');
+            showStopButton(false);
+            log('FARM', 'Auto Farm arrêté', 'info');
             clearTimeout(farmData.interval);
             farmData.nextRunTime = 0;
         }
@@ -282,40 +253,30 @@
         if (ctrl) ctrl.classList.add('inactive');
 
         const status = document.getElementById('farm-status');
-        if (status) status.textContent = 'Arrêt d\'urgence activé';
+        if (status) status.textContent = 'Arrêt d\'urgence';
 
-        showCenteredStopButton(false);
+        showStopButton(false);
 
-        log('FARM', '🚨 STOP CURRENT ROUTINE : Toutes les actions ont été coupées.', 'error');
+        log('FARM', '🚨 STOP CURRENT ROUTINE : Routine stoppée par l\'utilisateur.', 'error');
         if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
     }
 
-    // ─── HUMANISATION & JITTER ───────────────────────────────────────────────────
+    // ─── TIMER ALÉATOIRE ENTRE 10 ET 17 MINUTES ─────────────────────────────────
 
-    function getHumanizedDelayMs(baseSec) {
-        const baseMs = baseSec * 1000;
-        const jitterSec = Math.floor(Math.random() * 91) - 30; // -30s à +60s
-        let finalMs = baseMs + (jitterSec * 1000);
-
-        if (finalMs < 120000) finalMs = 120000;
-
-        if (Math.random() < 0.15) {
-            const breakMin = Math.floor(Math.random() * 10) + 3;
-            const breakMs = breakMin * 60 * 1000;
-            log('FARM', `Simulation humaine : Pause prolongée de ${breakMin} min...`, 'warning');
-            finalMs += breakMs;
-        }
-
-        return finalMs;
+    function getRandomIntervalMs() {
+        const minMins = 10;
+        const maxMins = 17;
+        const randomMins = Math.floor(Math.random() * (maxMins - minMins + 1)) + minMins;
+        return randomMins * 60 * 1000;
     }
 
-    // ─── ACTIONS ALÉATOIRES (PANNEAU DE 5 TÂCHES) ─────────────────────────────────
+    // ─── TÂCHES ALÉATOIRES (OUVERTURE ET FERMETURE SYSTÉMATIQUE) ─────────────────
 
     async function performRandomHumanActions() {
         if (!farmData.enabled) return;
         
         try {
-            log('FARM', 'Comportement humain : Sélection et exécution de 2 tâches aléatoires...', 'info');
+            log('FARM', 'Routine humaine : Exécution de 2 tâches aléatoires (ouverture & fermeture)...', 'info');
 
             const possibleTasks = [
                 { name: 'Rapports', type: uw.GPWindowMgr?.TYPE_REPORT },
@@ -327,22 +288,26 @@
 
             if (possibleTasks.length === 0) return;
 
+            // Mélanger et prendre 2 tâches
             possibleTasks.sort(() => Math.random() - 0.5);
             const selectedTasks = possibleTasks.slice(0, 2);
 
             for (const task of selectedTasks) {
                 if (!farmData.enabled) break;
 
-                log('FARM', `Action simulée : Ouverture de [${task.name}]`, 'info');
+                log('FARM', `Ouverture temporaire : [${task.name}]`, 'info');
                 
                 if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
                     uw.GPWindowMgr.Create(task.type);
 
-                    const waitTime = Math.floor(Math.random() * 2001) + 2000; // 2 à 4 sec
+                    // Attendre entre 2 et 4 secondes
+                    const waitTime = Math.floor(Math.random() * 2001) + 2000;
                     await new Promise(r => setTimeout(r, waitTime));
 
                     if (!farmData.enabled) break;
 
+                    // FERMETURE SYSTÉMATIQUE de l'onglet ouvert
+                    log('FARM', `Fermeture de l'onglet : [${task.name}]`, 'info');
                     if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
                         uw.GPWindowMgr.CloseAllOpenWindowsOfType(task.type);
                     }
@@ -350,6 +315,7 @@
                     await new Promise(r => setTimeout(r, 3000));
                 }
 
+                // Petite pause entre les deux tâches
                 await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 500));
             }
 
@@ -363,18 +329,19 @@
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
-        if (Math.random() < 0.8) {
-            await performRandomHumanActions();
-        }
+        // 1. Exécuter les 2 tâches aléatoires (ouverture + attente 2-4s + fermeture) au début de la routine
+        await performRandomHumanActions();
 
         if (!farmData.enabled) return;
 
+        // 2. Exécuter la récolte des villages paysans
         await executeFarmClaim();
 
         if (!farmData.enabled) return;
 
-        const opt = DURATION_OPTIONS[farmData.settings.duration];
-        const nextDelay = getHumanizedDelayMs(opt.intervalSec);
+        // 3. Lancer un timer aléatoire entre 10 et 17 minutes pour le prochain passage
+        const nextDelay = getRandomIntervalMs();
+        log('FARM', `Prochain cycle planifié dans ~${Math.round(nextDelay / 60000)} minutes.`, 'info');
         scheduleNext(nextDelay);
     }
 
@@ -405,7 +372,7 @@
             }
 
             const ids = list.map(p => p.id);
-            const opt = DURATION_OPTIONS[farmData.settings.duration];
+            const opt = DURATION_OPTIONS[2]; // Utilise par défaut l'option 10 min de base pour les requêtes de claim
 
             if (!farmData.enabled) return;
             log('FARM', `Récolte: ${ids.length} île(s)...`, 'info');
@@ -418,11 +385,17 @@
 
             if (!farmData.enabled) return;
 
+            const DURATION_OPTIONS = {
+                1: { base: 300,  booty: 600 },
+                2: { base: 600,  booty: 1200 },
+                3: { base: 1200, booty: 2400 }
+            };
+
             await new Promise((resolve) => {
                 uw.gpAjax.ajaxPost('farm_town_overviews', 'claim_loads_multiple', {
                     towns: ids,
-                    time_option_base:  opt.base,
-                    time_option_booty: opt.booty,
+                    time_option_base:  600,
+                    time_option_booty: 1200,
                     claim_factor: 'normal'
                 }, false, (resp) => {
                     let realGain = 0;
@@ -518,12 +491,6 @@
     }
 
     // ─── HELPERS ─────────────────────────────────────────────────────────────────
-
-    function updateIntervalLabel() {
-        const opt = DURATION_OPTIONS[farmData.settings.duration];
-        const el  = document.getElementById('farm-interval-label');
-        if (el) el.textContent = opt.label;
-    }
 
     function updateStats() {
         const c = document.getElementById('farm-stat-cycles');
