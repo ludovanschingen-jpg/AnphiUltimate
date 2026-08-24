@@ -13,6 +13,31 @@
         tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
     };
 
+    // URLs directes des icônes officielles du Wiki Grepolis FR
+    const WIKI_ICONS = {
+        main: 'https://wiki.fr.grepolis.com/images/thumb/7/74/Senat_icon.png/40px-Senat_icon.png',
+        lumber: 'https://wiki.fr.grepolis.com/images/thumb/d/d7/Scierie_icon.png/40px-Scierie_icon.png',
+        stoner: 'https://wiki.fr.grepolis.com/images/thumb/e/e0/Carriere_icon.png/40px-Carriere_icon.png',
+        ironer: 'https://wiki.fr.grepolis.com/images/thumb/8/8c/Mine_d_argent_icon.png/40px-Mine_d_argent_icon.png',
+        storage: 'https://wiki.fr.grepolis.com/images/thumb/4/4e/Entrepot_icon.png/40px-Entrepot_icon.png',
+        farm: 'https://wiki.fr.grepolis.com/images/thumb/f/f6/Ferme_icon.png/40px-Ferme_icon.png',
+        barracks: 'https://wiki.fr.grepolis.com/images/thumb/1/1a/Caserne_icon.png/40px-Caserne_icon.png',
+        docks: 'https://wiki.fr.grepolis.com/images/thumb/b/be/Port_icon.png/40px-Port_icon.png',
+        wall: 'https://wiki.fr.grepolis.com/images/thumb/a/ae/Remparts_icon.png/40px-Remparts_icon.png',
+        academy: 'https://wiki.fr.grepolis.com/images/thumb/3/3f/Academie_icon.png/40px-Academie_icon.png',
+        temple: 'https://wiki.fr.grepolis.com/images/thumb/8/82/Temple_icon.png/40px-Temple_icon.png',
+        market: 'https://wiki.fr.grepolis.com/images/thumb/4/4c/Marche_icon.png/40px-Marche_icon.png',
+        hide: 'https://wiki.fr.grepolis.com/images/thumb/6/63/Grotte_icon.png/40px-Grotte_icon.png',
+        theater: 'https://wiki.fr.grepolis.com/images/thumb/8/8b/Theatre_icon.png/40px-Theatre_icon.png',
+        thermal: 'https://wiki.fr.grepolis.com/images/thumb/e/ee/Thermes_icon.png/40px-Thermes_icon.png',
+        library: 'https://wiki.fr.grepolis.com/images/thumb/a/a2/Bibliotheque_icon.png/40px-Bibliotheque_icon.png',
+        lighthouse: 'https://wiki.fr.grepolis.com/images/thumb/6/6a/Phare_icon.png/40px-Phare_icon.png',
+        tower: 'https://wiki.fr.grepolis.com/images/thumb/8/8c/Tour_icon.png/40px-Tour_icon.png',
+        statue: 'https://wiki.fr.grepolis.com/images/thumb/d/d4/Statue_divine_icon.png/40px-Statue_divine_icon.png',
+        oracle: 'https://wiki.fr.grepolis.com/images/thumb/3/33/Oracle_icon.png/40px-Oracle_icon.png',
+        trade_office: 'https://wiki.fr.grepolis.com/images/thumb/f/f3/Comptoir_icon.png/40px-Comptoir_icon.png'
+    };
+
     const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
@@ -225,7 +250,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec les classes CSS natives et l\'Oracle rétabli', 'info');
+        log('BUILD', 'Module initialisé avec les icônes du Wiki officiel', 'info');
     };
 
     module.isActive = function() {
@@ -273,12 +298,13 @@
         if (!container) return;
 
         const renderItems = (bids) => bids.map(bid => {
+            const iconUrl = WIKI_ICONS[bid] || '';
             const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
             
             return `
                 <div style="width: 65px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 4px; text-align: center;" title="${NAMES[bid]}">
-                    <div style="width: 45px; height: 45px; margin: 0 auto; display: flex; align-items: center; justify-content: center;">
-                        <div class="building_icon ${bid}" style="width: 45px; height: 45px; transform: scale(0.95);"></div>
+                    <div style="width: 45px; height: 45px; margin: 0 auto; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); border-radius: 4px;">
+                        <img src="${iconUrl}" style="max-width: 40px; max-height: 40px;" alt="${NAMES[bid]}">
                     </div>
                     <div style="font-size: 9px; color: #F5DEB3; margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
                     <input type="number" min="0" max="50" value="${level}" 
@@ -662,8 +688,9 @@
                 $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;">File vide - Utilisez les boutons "+ FILE"</div>');
             } else {
                 $items.html(queue.map((it, i) => {
+                    const iconUrl = WIKI_ICONS[it.buildingId] || '';
                     return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="${NAMES[it.buildingId]} niv.${it.level}">
-                        <div class="building_icon ${it.buildingId}" style="width:40px;height:40px;"></div>
+                        <img src="${iconUrl}" style="max-width:38px;max-height:38px;" alt="">
                         <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
                         <div onclick="event.stopPropagation();GU_Build.remove(${i})" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;display:none;">x</div>
                     </div>`;
@@ -727,8 +754,9 @@
             container.innerHTML = '<div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Sénat pour voir la file</div>';
         } else {
             container.innerHTML = queue.map((it, i) => {
+                const iconUrl = WIKI_ICONS[it.buildingId] || '';
                 return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="${NAMES[it.buildingId]} niv.${it.level}">
-                    <div class="building_icon ${it.buildingId}" style="width:40px;height:40px;"></div>
+                    <img src="${iconUrl}" style="max-width:38px;max-height:38px;" alt="">
                     <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
                 </div>`;
             }).join('');
