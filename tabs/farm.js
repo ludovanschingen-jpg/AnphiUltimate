@@ -6,22 +6,23 @@
     const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
     const GM_addStyle = module.GM_addStyle;
 
-    // Options de durées standard acceptées par le serveur Grepolis pour les requêtes de farm
+    // Options de durées valides acceptées par le serveur Grepolis
     const DURATION_OPTIONS = {
-        1: { label: '5 minutes',  base: 300,  booty: 600 },
-        2: { label: '20 minutes', base: 1200, booty: 2400 }
+        1: { label: '5 minutes',  base: 300,  booty: 600,  intervalSec: 5  * 60 },
+        2: { label: '10 minutes', base: 600,  booty: 1200, intervalSec: 10 * 60 },
+        3: { label: '20 minutes', base: 1200, booty: 2400, intervalSec: 20 * 60 }
     };
 
     let farmData = {
         enabled: false,
-        settings: { mode: 'least_resources', webhook: '' },
+        settings: { mode: 'least_resources', duration: 2, webhook: '' },
         stats: { cycles: 0, totalRes: 0 },
         cycleCount: 0,
         interval: null,
         nextRunTime: 0
     };
 
-    // ─── STYLES DU BOUTON STOP ET HUD ────────────────────────────────────────────
+    // ─── STYLES DU BOUTON STOP CENTRAL ───────────────────────────────────────────
 
     if (GM_addStyle) {
         GM_addStyle(`
@@ -63,7 +64,7 @@
         `);
     }
 
-    // ─── UI DE L'ONGLET ──────────────────────────────────────────────────────────
+    // ─── UI DE L'ONGLET (AVEC LES DEUX COLONNES) ─────────────────────────────────
 
     module.render = function(container) {
         container.innerHTML = `
@@ -99,7 +100,7 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>⏱️</span> Prochaine Récolte (10 à 17 min aléatoires)</div>
+                    <div class="section-title"><span>⏱️</span> Prochaine Récolte (Aléatoire 10-17m)</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
@@ -125,9 +126,17 @@
                                 <option value="round_robin">Cyclique</option>
                             </select>
                         </div>
+                        <div class="option-group">
+                            <span class="option-label">Intervalle de base</span>
+                            <select class="option-select" id="farm-duration">
+                                <option value="1">5 minutes</option>
+                                <option value="2">10 minutes</option>
+                                <option value="3">20 minutes</option>
+                            </select>
+                        </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ Automatisation : 2 onglets ouverts/fermés proprement, puis récolte standard, puis délai aléatoire entre 10 et 17 minutes.
+                        ℹ️ 2 onglets ouverts/fermés proprement au début, puis récolte sécurisée, puis délai aléatoire (ex: 10 à 17 min).
                     </div>
                 </div>
             </div>
@@ -146,7 +155,7 @@
         `;
     };
 
-    // ─── GESTION DU BOUTON STOP SUR L'ÉCRAN ──────────────────────────────────────
+    // ─── GESTION DU BOUTON STOP FLOTTANT ──────────────────────────────────────────
 
     function createStopButton() {
         if (document.getElementById('gu-stop-routine')) return;
@@ -182,6 +191,7 @@
 
         document.getElementById('toggle-farm').checked    = farmData.enabled;
         document.getElementById('farm-mode').value        = farmData.settings.mode;
+        document.getElementById('farm-duration').value    = farmData.settings.duration;
         document.getElementById('farm-webhook').value     = farmData.settings.webhook || '';
         updateStats();
 
@@ -191,6 +201,13 @@
             farmData.settings.mode = e.target.value;
             saveData();
             log('FARM', 'Mode: ' + (e.target.value === 'least_resources' ? 'Villes vides' : 'Cyclique'), 'info');
+        };
+
+        document.getElementById('farm-duration').onchange = (e) => {
+            farmData.settings.duration = parseInt(e.target.value);
+            saveData();
+            const opt = DURATION_OPTIONS[farmData.settings.duration];
+            log('FARM', `Intervalle de base configuré : ${opt.label}`, 'info');
         };
 
         document.getElementById('farm-webhook').onchange = (e) => {
@@ -211,7 +228,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé (timer 10-17 min aléatoire) initialisé', 'info');
+        log('FARM', 'Module humanisé (options à deux colonnes & timer aléatoire) initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -334,7 +351,7 @@
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
-        // 1. DÉBUT DU CYCLE ACTIF : Affichage du bouton "Stop current routine"
+        // 1. DÉBUT DU CYCLE : Affichage du bouton "Stop current routine"
         showStopButton(true);
 
         // Exécuter les 2 tâches aléatoires (ouverture -> attente 2-4s -> fermeture systématique)
@@ -401,14 +418,13 @@
 
             if (!farmData.enabled) return;
 
-            // Utilisation d'une option de base standard valide (ex: option 1 = 5 min / booty 10 min)
-            const activeOption = DURATION_OPTIONS[1];
+            const opt = DURATION_OPTIONS[farmData.settings.duration] || DURATION_OPTIONS[2];
 
             await new Promise((resolve) => {
                 uw.gpAjax.ajaxPost('farm_town_overviews', 'claim_loads_multiple', {
                     towns: ids,
-                    time_option_base:  activeOption.base,
-                    time_option_booty: activeOption.booty,
+                    time_option_base:  opt.base,
+                    time_option_booty: opt.booty,
                     claim_factor: 'normal'
                 }, false, (resp) => {
                     let realGain = 0;
