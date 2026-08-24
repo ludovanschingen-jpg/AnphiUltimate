@@ -14,14 +14,13 @@
         oracle: 'Oracle', trade_office: 'Comptoir', theater: 'Théâtre' 
     };
     
-    // Coordonnées corrigées des sprites de bâtiments (50x50)
+    // Coordonnées exactes et corrigées des sprites de bâtiments (50x50)
     const SPRITES = { 
         main: [450, 0], storage: [250, 50], farm: [150, 0], academy: [0, 0], 
         temple: [300, 50], barracks: [50, 0], docks: [100, 0], market: [0, 50], 
         hide: [200, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
-        wall: [50, 100], theater: [350, 50], thermal: [350, 0], library: [450, 50], 
-        lighthouse: [100, 50], tower: [400, 50], statue: [150, 50], oracle: [50, 50], 
-        trade_office: [300, 0] 
+        wall: [50, 100], thermal: [100, 50], library: [400, 50], lighthouse: [350, 0], 
+        tower: [350, 50], statue: [150, 50], oracle: [50, 50], trade_office: [300, 0], theater: [450, 50] 
     };
 
     const FR_TO_ID = { 
@@ -91,7 +90,6 @@
                 </div>
             </div>
 
-            <!-- SECTION DESIGNER DE TEMPLATES AGRANDIE ET VISIBLE -->
             <div class="bot-section">
                 <div class="section-header">
                     <div class="section-title"><span>🎨</span> Designer de Template (Niveaux Cibles)</div>
@@ -99,7 +97,7 @@
                 </div>
                 <div class="section-content">
                     <div style="margin-bottom: 12px; font-size: 11px; color: #F5DEB3;">
-                        Modifiez les niveaux cibles. Cliquez pour importer les niveaux actuels de votre ville, ou tapez directement la valeur souhaitée. Les prérequis sont gérés automatiquement !
+                        Modifiez vos niveaux cibles. Les prérequis (Sénat, Entrepôt, etc.) sont calculés et appliqués automatiquement !
                     </div>
                     
                     <div id="designer-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); gap: 10px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 380px; overflow-y: auto;">
@@ -186,8 +184,6 @@
 
     module.init = function() {
         loadData();
-        
-        // Si le template designer est vide, initialiser avec les niveaux de la ville active ou des zéros propres
         initializeDesignerTemplate();
 
         document.getElementById('toggle-build').checked = buildData.enabled;
@@ -210,7 +206,6 @@
             }
         };
 
-        // Boutons du Designer
         document.getElementById('btn-import-town').onclick = () => importTownLevelsToDesigner();
         document.getElementById('btn-save-designer').onclick = () => saveDesignerTemplate();
         document.getElementById('btn-apply-designer').onclick = () => generateQueueFromDesigner();
@@ -224,13 +219,8 @@
             };
         });
 
-        if (buildData.enabled) {
-            toggleBuild(true);
-        }
-
-        if (buildData.gratisEnabled) {
-            toggleGratis(true);
-        }
+        if (buildData.enabled) toggleBuild(true);
+        if (buildData.gratisEnabled) toggleGratis(true);
 
         startSenateWatcher();
         startTimer();
@@ -241,7 +231,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec Designer Agrandi & Lecture Ville', 'info');
+        log('BUILD', 'Module initialisé avec correction des sprites & prérequis actifs', 'info');
     };
 
     module.isActive = function() {
@@ -253,8 +243,6 @@
         updateStats();
         updateQueueDisplay();
     };
-
-    // ─── LECTURE DES NIVEAUX DE LA VILLE ACTUELLE ────────────────────────────────
 
     function initializeDesignerTemplate() {
         if (!buildData.designerTemplate || Object.keys(buildData.designerTemplate).length === 0) {
@@ -283,11 +271,8 @@
             if (!silent) log('BUILD', 'Niveaux actuels de la ville importés dans le designer !', 'success');
         } catch (e) {
             console.error('[GU Build] Erreur import niveaux ville:', e);
-            if (!silent) log('BUILD', 'Erreur lors de l\'importation des niveaux.', 'error');
         }
     }
-
-    // ─── RENDU DU DESIGNER VISUEL (GRILLE AGRANDIE) ──────────────────────────────
 
     function renderDesignerGrid() {
         const grid = document.getElementById('designer-grid');
@@ -319,11 +304,37 @@
         renderDesignerGrid();
     }
 
-    // ─── GESTION DES PRÉREQUIS AUTOMATIQUES ──────────────────────────────────────
+    // ─── GESTION DES PRÉREQUIS ACTIFS ET AUTOMATIQUES ─────────────────────────────
 
     function applyPrerequisites(bid, targetLevel) {
         buildData.designerTemplate[bid] = targetLevel;
 
+        if (targetLevel <= 0) return;
+
+        // Bâtiments spéciaux exclusifs (Thermes, Bibliothèque, Phare, Tour) -> Un seul par ville, nécessite Sénat 24 & Entrepôt 22
+        if (['thermal', 'library', 'lighthouse', 'tower'].includes(bid) && targetLevel > 0) {
+            if ((buildData.designerTemplate['main'] || 0) < 24) buildData.designerTemplate['main'] = 24;
+            if ((buildData.designerTemplate['storage'] || 0) < 22) buildData.designerTemplate['storage'] = 22;
+        }
+
+        // Thermes : Sénat 24, Entrepôt 22, Ferme 35
+        if (bid === 'thermal' && targetLevel > 0) {
+            if ((buildData.designerTemplate['farm'] || 0) < 35) buildData.designerTemplate['farm'] = 35;
+        }
+        // Bibliothèque : Sénat 24, Entrepôt 22, Académie 30
+        if (bid === 'library' && targetLevel > 0) {
+            if ((buildData.designerTemplate['academy'] || 0) < 30) buildData.designerTemplate['academy'] = 30;
+        }
+        // Phare : Sénat 24, Entrepôt 22, Port 20
+        if (bid === 'lighthouse' && targetLevel > 0) {
+            if ((buildData.designerTemplate['docks'] || 0) < 20) buildData.designerTemplate['docks'] = 20;
+        }
+        // Tour : Sénat 24, Entrepôt 22, Remparts 15
+        if (bid === 'tower' && targetLevel > 0) {
+            if ((buildData.designerTemplate['wall'] || 0) < 15) buildData.designerTemplate['wall'] = 15;
+        }
+
+        // Académie haut niveau (ex: 34)
         if (bid === 'academy' && targetLevel >= 34) {
             if ((buildData.designerTemplate['main'] || 0) < 24) buildData.designerTemplate['main'] = 24;
             if ((buildData.designerTemplate['storage'] || 0) < 22) buildData.designerTemplate['storage'] = 22;
@@ -332,17 +343,38 @@
             if ((buildData.designerTemplate['stoner'] || 0) < 24) buildData.designerTemplate['stoner'] = 24;
             if ((buildData.designerTemplate['ironer'] || 0) < 24) buildData.designerTemplate['ironer'] = 24;
         }
+        // Académie de base
         if (bid === 'academy' && targetLevel >= 1) {
             if ((buildData.designerTemplate['main'] || 0) < 8) buildData.designerTemplate['main'] = 8;
             if ((buildData.designerTemplate['storage'] || 0) < 10) buildData.designerTemplate['storage'] = 10;
         }
+        // Caserne
         if (bid === 'barracks' && targetLevel >= 1) {
             if ((buildData.designerTemplate['main'] || 0) < 4) buildData.designerTemplate['main'] = 4;
         }
+        // Port
         if (bid === 'docks' && targetLevel >= 1) {
             if ((buildData.designerTemplate['main'] || 0) < 6) buildData.designerTemplate['main'] = 6;
             if ((buildData.designerTemplate['storage'] || 0) < 5) buildData.designerTemplate['storage'] = 5;
             if ((buildData.designerTemplate['lumber'] || 0) < 5) buildData.designerTemplate['lumber'] = 5;
+        }
+        // Temple
+        if (bid === 'temple' && targetLevel >= 1) {
+            if ((buildData.designerTemplate['main'] || 0) < 5) buildData.designerTemplate['main'] = 5;
+            if ((buildData.designerTemplate['storage'] || 0) < 8) buildData.designerTemplate['storage'] = 8;
+        }
+        // Marché
+        if (bid === 'market' && targetLevel >= 1) {
+            if ((buildData.designerTemplate['main'] || 0) < 3) buildData.designerTemplate['main'] = 3;
+            if ((buildData.designerTemplate['storage'] || 0) < 10) buildData.designerTemplate['storage'] = 10;
+            if ((buildData.designerTemplate['stoner'] || 0) < 5) buildData.designerTemplate['stoner'] = 5;
+        }
+        // Remparts
+        if (bid === 'wall' && targetLevel >= 1) {
+            if ((buildData.designerTemplate['main'] || 0) < 3) buildData.designerTemplate['main'] = 3;
+            if ((buildData.designerTemplate['silver'] || buildData.designerTemplate['ironer'] || 0) < 1) {
+                if ((buildData.designerTemplate['ironer'] || 0) < 1) buildData.designerTemplate['ironer'] = 1;
+            }
         }
     }
 
@@ -377,7 +409,7 @@
         refreshSenateQueue();
         updateStats();
         updateQueueDisplay();
-        log('BUILD', `Template appliqué ! ${newQueue.length} constructions planifiées.`, 'success');
+        log('BUILD', `Template appliqué ! ${newQueue.length} constructions planifiées en tenant compte des prérequis.`, 'success');
     }
 
     function resetDesignerGrid() {
@@ -388,8 +420,6 @@
         renderDesignerGrid();
         log('BUILD', 'Niveaux du Designer réinitialisés à 0.', 'info');
     }
-
-    // ─── OUVERTURE AUTOMATIQUE DES FENÊTRES ──────────────────────────────────────
 
     function openRequiredWindows() {
         try {
@@ -406,8 +436,6 @@
         }
     }
 
-    // ─── CONTRÔLES PRINCIPAUX ────────────────────────────────────────────────────
-
     function toggleBuild(enabled) {
         buildData.enabled = enabled;
         const ctrl = document.getElementById('build-control');
@@ -417,9 +445,7 @@
             ctrl.classList.remove('inactive');
             status.textContent = 'Actif';
             log('BUILD', 'Bot de construction démarré', 'success');
-            
             openRequiredWindows();
-
             buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
             processAllQueues();
         } else {
@@ -444,7 +470,6 @@
             status.textContent = 'Actif';
             status.style.color = '#81C784';
             log('BUILD', 'Auto Gratis activé', 'success');
-            
             if (gratisInterval) clearInterval(gratisInterval);
             gratisInterval = setInterval(checkGratis, 2500);
         } else {
@@ -452,7 +477,6 @@
             status.textContent = 'Inactif';
             status.style.color = '#E57373';
             log('BUILD', 'Auto Gratis désactivé', 'info');
-            
             if (gratisInterval) {
                 clearInterval(gratisInterval);
                 gratisInterval = null;
@@ -468,16 +492,12 @@
     function checkGratis() {
         try {
             const gratisButton = uw.$('.type_building_queue.type_free').not('.disabled');
-            
             if (gratisButton.length > 0) {
                 gratisButton.click();
-                
                 const town = uw.ITowns.getCurrentTown();
                 if (!town) return;
-                
                 const buildingOrders = town.buildingOrders();
                 if (!buildingOrders || !buildingOrders.models) return;
-                
                 for (let model of buildingOrders.models) {
                     if (model.attributes && model.attributes.building_time < 300) {
                         callGratis(town.id, model.id);
@@ -498,9 +518,7 @@
                 arguments: { order_id: orderId },
                 town_id: townId
             };
-            
             const townName = uw.ITowns.getTown(townId)?.getName() || `Ville ${townId}`;
-            
             uw.gpAjax.ajaxPost('frontend_bridge', 'execute', data, null, {
                 success: function() {
                     buildData.stats.gratisClaimed++;
@@ -602,7 +620,6 @@
         if (!$bt.length) return;
 
         const queue = buildData.queues[uw.Game.townId] || [];
-        
         const $parent = $bt.closest('.gpwindow_content');
         if ($parent.length && $parent.css('overflow') !== 'auto') {
             $parent.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
