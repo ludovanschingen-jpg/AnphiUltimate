@@ -13,19 +13,19 @@
         tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
     };
 
-    // Organisation exacte selon l'interface officielle de Grepolis
+    // Organisation exacte demandée
     const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Coordonnées exactes des sprites de bâtiments (50x50)
+    // Coordonnées de sprites séquentielles et rigoureusement alignées (grille 10 colonnes)
     const SPRITES = { 
-        academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
-        hide: [200, 0], ironer: [250, 0], trade_office: [300, 0], theater: [350, 0], 
-        lumber: [400, 0], main: [450, 0], market: [0, 50], tower: [50, 50], 
-        oracle: [100, 50], statue: [150, 50], stoner: [200, 50], storage: [250, 50], 
-        temple: [300, 50], thermal: [350, 50], library: [400, 50], lighthouse: [450, 50], 
-        wall: [0, 100] 
+        main: [0, 0], lumber: [50, 0], stoner: [100, 0], ironer: [150, 0], 
+        storage: [200, 0], farm: [250, 0], barracks: [300, 0], docks: [350, 0], 
+        wall: [400, 0], academy: [450, 0], temple: [0, 50], market: [50, 50], 
+        hide: [100, 50], theater: [150, 50], thermal: [200, 50], library: [250, 50], 
+        lighthouse: [300, 50], tower: [350, 50], statue: [400, 50], oracle: [450, 50], 
+        trade_office: [0, 100] 
     };
 
     const FR_TO_ID = { 
@@ -97,12 +97,12 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>🎨</span> Designer de Template (Agencement Officiel)</div>
+                    <div class="section-title"><span>🎨</span> Designer de Template</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
                     <div style="margin-bottom: 12px; font-size: 11px; color: #F5DEB3;">
-                        Bâtiments classiques en bloc, et bâtiments spéciaux séparés (1 seul choix max par côté).
+                        Bâtiments classiques et colonnes spéciales exclusives (1 seul choix max par côté).
                     </div>
                     
                     <div id="designer-container" style="display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 480px; overflow-y: auto;">
@@ -236,7 +236,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec layout officiel par blocs', 'info');
+        log('BUILD', 'Module initialisé avec layout de designer officiel corrigé', 'info');
     };
 
     module.isActive = function() {
@@ -299,7 +299,7 @@
         }).join('');
 
         container.innerHTML = `
-            <!-- Bloc Classique (Mono Bloc) -->
+            <!-- Bloc Bâtiments Classiques (Mono Bloc) -->
             <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
                 <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">🏛️ Bâtiments Classiques</div>
                 <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
@@ -331,7 +331,7 @@
         if (num < 0) num = 0;
         if (num > 50) num = 50;
         
-        // Règle d'exclusion mutuelle pour les bâtiments spéciaux
+        // Règle d'exclusion mutuelle stricte par colonne
         if (LEFT_SPECIALS.includes(bid) && num > 0) {
             LEFT_SPECIALS.forEach(s => {
                 if (s !== bid) buildData.designerTemplate[s] = 0;
