@@ -57,7 +57,7 @@
         `);
     }
 
-    // ─── UI DE L'ONGLET (SANS BOUTON STOP INTERNE) ───────────────────────────────
+    // ─── UI DE L'ONGLET ──────────────────────────────────────────────────────────
 
     module.render = function(container) {
         container.innerHTML = `
@@ -205,7 +205,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé (10-17 min & tâches strictes) initialisé', 'info');
+        log('FARM', 'Module humanisé (bouton conditionnel au cycle) initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -224,13 +224,12 @@
         if (enabled) {
             if (ctrl) ctrl.classList.remove('inactive');
             if (status) status.textContent = 'Actif (Sécurisé)';
-            showStopButton(true);
-            log('FARM', 'Auto Farm démarré', 'success');
+            log('FARM', 'Auto Farm démarré (en attente du cycle)', 'success');
             runFarmCycle();
         } else {
             if (ctrl) ctrl.classList.add('inactive');
             if (status) status.textContent = 'En attente';
-            showStopButton(false);
+            showStopButton(false); // S'assure que le bouton disparaît à l'arrêt
             log('FARM', 'Auto Farm arrêté', 'info');
             clearTimeout(farmData.interval);
             farmData.nextRunTime = 0;
@@ -288,7 +287,6 @@
 
             if (possibleTasks.length === 0) return;
 
-            // Mélanger et prendre 2 tâches
             possibleTasks.sort(() => Math.random() - 0.5);
             const selectedTasks = possibleTasks.slice(0, 2);
 
@@ -300,13 +298,11 @@
                 if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
                     uw.GPWindowMgr.Create(task.type);
 
-                    // Attendre entre 2 et 4 secondes
                     const waitTime = Math.floor(Math.random() * 2001) + 2000;
                     await new Promise(r => setTimeout(r, waitTime));
 
                     if (!farmData.enabled) break;
 
-                    // FERMETURE SYSTÉMATIQUE de l'onglet ouvert
                     log('FARM', `Fermeture de l'onglet : [${task.name}]`, 'info');
                     if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
                         uw.GPWindowMgr.CloseAllOpenWindowsOfType(task.type);
@@ -315,7 +311,6 @@
                     await new Promise(r => setTimeout(r, 3000));
                 }
 
-                // Petite pause entre les deux tâches
                 await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 500));
             }
 
@@ -329,17 +324,29 @@
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
-        // 1. Exécuter les 2 tâches aléatoires (ouverture + attente 2-4s + fermeture) au début de la routine
+        // 1. DÉBUT DU CYCLE ACTIF : Affichage du bouton "Stop current routine"
+        showStopButton(true);
+
+        // Exécuter les 2 tâches aléatoires (ouverture + attente 2-4s + fermeture)
         await performRandomHumanActions();
 
-        if (!farmData.enabled) return;
+        if (!farmData.enabled) {
+            showStopButton(false);
+            return;
+        }
 
-        // 2. Exécuter la récolte des villages paysans
+        // Exécuter la récolte des villages paysans
         await executeFarmClaim();
 
-        if (!farmData.enabled) return;
+        if (!farmData.enabled) {
+            showStopButton(false);
+            return;
+        }
 
-        // 3. Lancer un timer aléatoire entre 10 et 17 minutes pour le prochain passage
+        // 2. FIN DU CYCLE ACTIF : Masquage du bouton "Stop current routine"
+        showStopButton(false);
+
+        // 3. Planifier le délai aléatoire entre 10 et 17 minutes pour le prochain passage
         const nextDelay = getRandomIntervalMs();
         log('FARM', `Prochain cycle planifié dans ~${Math.round(nextDelay / 60000)} minutes.`, 'info');
         scheduleNext(nextDelay);
@@ -372,7 +379,6 @@
             }
 
             const ids = list.map(p => p.id);
-            const opt = DURATION_OPTIONS[2]; // Utilise par défaut l'option 10 min de base pour les requêtes de claim
 
             if (!farmData.enabled) return;
             log('FARM', `Récolte: ${ids.length} île(s)...`, 'info');
@@ -384,12 +390,6 @@
             await new Promise(r => setTimeout(r, 800));
 
             if (!farmData.enabled) return;
-
-            const DURATION_OPTIONS = {
-                1: { base: 300,  booty: 600 },
-                2: { base: 600,  booty: 1200 },
-                3: { base: 1200, booty: 2400 }
-            };
 
             await new Promise((resolve) => {
                 uw.gpAjax.ajaxPost('farm_town_overviews', 'claim_loads_multiple', {
