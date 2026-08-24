@@ -7,25 +7,25 @@
 
     const NAMES = { 
         main: 'Sénat', lumber: 'Scierie', stoner: 'Carrière', ironer: 'Mine d\'argent', 
-        storage: 'Entrepôt', farm: 'Ferme', barracks: 'Caserne', hide: 'Grotte', 
-        thermal: 'Thermes', library: 'Bibliothèque', lighthouse: 'Phare', tower: 'Tour',
-        docks: 'Port', wall: 'Remparts', academy: 'Académie', temple: 'Temple', 
-        market: 'Marché', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir', theater: 'Théâtre' 
+        storage: 'Entrepôt', farm: 'Ferme', barracks: 'Caserne', docks: 'Port', 
+        wall: 'Remparts', academy: 'Académie', temple: 'Temple', market: 'Marché', hide: 'Grotte',
+        theater: 'Théâtre', thermal: 'Thermes', library: 'Bibliothèque', lighthouse: 'Phare', 
+        tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
     };
 
-    // Séparation en deux colonnes (Côté Gauche et Côté Droit de la ville de Grepolis)
-    const GROUPS = {
-        leftSide: ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'hide', 'thermal', 'library', 'lighthouse', 'tower'],
-        rightSide: ['docks', 'wall', 'academy', 'temple', 'market', 'statue', 'oracle', 'trade_office', 'theater']
-    };
+    // Groupes : Bâtiments classiques (mono bloc) et Bâtiments spéciaux séparés par colonne
+    const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
+    const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
+    const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Coordonnées exactes des sprites de bâtiments (50x50)
+    // Coordonnées exactes des sprites de bâtiments (50x50) alignées sur la matrice officielle 10x3
     const SPRITES = { 
-        main: [450, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
-        storage: [250, 50], farm: [150, 0], barracks: [50, 0], hide: [200, 0], 
-        thermal: [350, 50], library: [400, 50], lighthouse: [450, 50], tower: [50, 50],
-        docks: [100, 0], wall: [0, 100], academy: [0, 0], temple: [300, 50], 
-        market: [0, 50], statue: [150, 50], oracle: [100, 50], trade_office: [300, 0], theater: [350, 0] 
+        academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
+        hide: [200, 0], ironer: [250, 0], trade_office: [300, 0], theater: [350, 0], 
+        lumber: [400, 0], main: [450, 0], market: [0, 50], tower: [50, 50], 
+        oracle: [100, 50], statue: [150, 50], stoner: [200, 50], storage: [250, 50], 
+        temple: [300, 50], thermal: [350, 50], library: [400, 50], lighthouse: [450, 50], 
+        wall: [0, 100] 
     };
 
     const FR_TO_ID = { 
@@ -97,16 +97,16 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>🎨</span> Designer de Template (2 Colonnes)</div>
+                    <div class="section-title"><span>🎨</span> Designer de Template (Style Vues Ville)</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
                     <div style="margin-bottom: 12px; font-size: 11px; color: #F5DEB3;">
-                        Répartition par côté de la ville. Les prérequis sont appliqués automatiquement.
+                        Bâtiments classiques en bloc, et bâtiments spéciaux séparés (1 seul choix max par colonne).
                     </div>
                     
-                    <div id="designer-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 420px; overflow-y: auto;">
-                        <!-- Généré dynamiquement en 2 colonnes -->
+                    <div id="designer-container" style="display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 450px; overflow-y: auto;">
+                        <!-- Généré dynamiquement -->
                     </div>
 
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
@@ -236,7 +236,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec layout en deux colonnes', 'info');
+        log('BUILD', 'Module initialisé avec layout mono-bloc et colonnes spéciales exclusives', 'info');
     };
 
     module.isActive = function() {
@@ -283,43 +283,65 @@
         const container = document.getElementById('designer-container');
         if (!container) return;
 
-        const groupLabels = {
-            leftSide: '🏛️ Bâtiments de Gauche',
-            rightSide: '🏛️ Bâtiments de Droite'
-        };
-
-        container.innerHTML = Object.keys(GROUPS).map(groupKey => {
-            const bids = GROUPS[groupKey];
-            const itemsHtml = bids.map(bid => {
-                const sp = SPRITES[bid] || [0, 0];
-                const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
-                
-                return `
-                    <div style="width: 62px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 4px; text-align: center;" title="${NAMES[bid]}">
-                        <div style="width: 45px; height: 45px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
-                        <div style="font-size: 9px; color: #F5DEB3; margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
-                        <input type="number" min="0" max="50" value="${level}" 
-                            onchange="GU_Build.updateDesigner('${bid}', this.value)"
-                            style="width: 42px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 1px;" />
-                    </div>
-                `;
-            }).join('');
-
+        const renderItems = (bids) => bids.map(bid => {
+            const sp = SPRITES[bid] || [0, 0];
+            const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
+            
             return `
-                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
-                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">${groupLabels[groupKey]}</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start;">
-                        ${itemsHtml}
-                    </div>
+                <div style="width: 60px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 4px; text-align: center;" title="${NAMES[bid]}">
+                    <div style="width: 45px; height: 45px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
+                    <div style="font-size: 9px; color: #F5DEB3; margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
+                    <input type="number" min="0" max="50" value="${level}" 
+                        onchange="GU_Build.updateDesigner('${bid}', this.value)"
+                        style="width: 42px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 1px;" />
                 </div>
             `;
         }).join('');
+
+        container.innerHTML = `
+            <!-- Bloc Classique (Mono Bloc) -->
+            <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
+                <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">🏛️ Bâtiments Classiques</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                    ${renderItems(CLASSIC_BUILDINGS)}
+                </div>
+            </div>
+
+            <!-- Deux colonnes pour les Bâtiments Spéciaux exclusifs -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
+                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">⭐ Spéciaux Gauche (1 Max)</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                        ${renderItems(LEFT_SPECIALS)}
+                    </div>
+                </div>
+
+                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
+                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">⭐ Spéciaux Droite (1 Max)</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                        ${renderItems(RIGHT_SPECIALS)}
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
     function updateDesignerLevel(bid, val) {
         let num = parseInt(val) || 0;
         if (num < 0) num = 0;
         if (num > 50) num = 50;
+        
+        // Règle d'exclusion mutuelle pour les bâtiments spéciaux
+        if (LEFT_SPECIALS.includes(bid) && num > 0) {
+            LEFT_SPECIALS.forEach(s => {
+                if (s !== bid) buildData.designerTemplate[s] = 0;
+            });
+        }
+        if (RIGHT_SPECIALS.includes(bid) && num > 0) {
+            RIGHT_SPECIALS.forEach(s => {
+                if (s !== bid) buildData.designerTemplate[s] = 0;
+            });
+        }
         
         applyPrerequisites(bid, num);
         saveData();
