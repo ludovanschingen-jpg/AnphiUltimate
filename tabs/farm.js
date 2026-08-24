@@ -6,6 +6,13 @@
     const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
     const GM_addStyle = module.GM_addStyle;
 
+    // Définition globale des options de durée (placée tout en haut pour éviter l'erreur)
+    const DURATION_OPTIONS = {
+        1: { base: 300,  booty: 600 },
+        2: { base: 600,  booty: 1200 },
+        3: { base: 1200, booty: 2400 }
+    };
+
     let farmData = {
         enabled: false,
         settings: { mode: 'least_resources', duration: 1, webhook: '' },
@@ -205,7 +212,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé (bouton conditionnel au cycle) initialisé', 'info');
+        log('FARM', 'Module humanisé corrigé initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -224,12 +231,12 @@
         if (enabled) {
             if (ctrl) ctrl.classList.remove('inactive');
             if (status) status.textContent = 'Actif (Sécurisé)';
-            log('FARM', 'Auto Farm démarré (en attente du cycle)', 'success');
+            log('FARM', 'Auto Farm démarré', 'success');
             runFarmCycle();
         } else {
             if (ctrl) ctrl.classList.add('inactive');
             if (status) status.textContent = 'En attente';
-            showStopButton(false); // S'assure que le bouton disparaît à l'arrêt
+            showStopButton(false);
             log('FARM', 'Auto Farm arrêté', 'info');
             clearTimeout(farmData.interval);
             farmData.nextRunTime = 0;
@@ -324,7 +331,7 @@
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
-        // 1. DÉBUT DU CYCLE ACTIF : Affichage du bouton "Stop current routine"
+        // 1. DÉBUT DU CYCLE : Affichage du bouton "Stop current routine"
         showStopButton(true);
 
         // Exécuter les 2 tâches aléatoires (ouverture + attente 2-4s + fermeture)
@@ -343,7 +350,7 @@
             return;
         }
 
-        // 2. FIN DU CYCLE ACTIF : Masquage du bouton "Stop current routine"
+        // 2. FIN DU CYCLE : Masquage du bouton "Stop current routine"
         showStopButton(false);
 
         // 3. Planifier le délai aléatoire entre 10 et 17 minutes pour le prochain passage
@@ -394,8 +401,8 @@
             await new Promise((resolve) => {
                 uw.gpAjax.ajaxPost('farm_town_overviews', 'claim_loads_multiple', {
                     towns: ids,
-                    time_option_base:  600,
-                    time_option_booty: 1200,
+                    time_option_base:  DURATION_OPTIONS[2].base,
+                    time_option_booty: DURATION_OPTIONS[2].booty,
                     claim_factor: 'normal'
                 }, false, (resp) => {
                     let realGain = 0;
