@@ -6,19 +6,25 @@
     const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
 
     const NAMES = { 
-        main: 'Sénat', lumber: 'Scierie', farm: 'Ferme', stoner: 'Carrière', 
-        storage: 'Entrepôt', ironer: 'Mine d\'argent', barracks: 'Caserne', 
-        temple: 'Temple', market: 'Marché', docks: 'Port', academy: 'Académie', 
-        wall: 'Remparts', hide: 'Grotte', thermal: 'Thermes', library: 'Bibliothèque', 
-        lighthouse: 'Phare', tower: 'Tour', statue: 'Statue divine', 
-        oracle: 'Oracle', trade_office: 'Comptoir', theater: 'Théâtre' 
+        main: 'Sénat', lumber: 'Scierie', stoner: 'Carrière', ironer: 'Mine d\'argent', 
+        storage: 'Entrepôt', farm: 'Ferme', barracks: 'Caserne', docks: 'Port', 
+        wall: 'Remparts', academy: 'Académie', temple: 'Temple', market: 'Marché', 
+        hide: 'Grotte', thermal: 'Thermes', library: 'Bibliothèque', lighthouse: 'Phare', 
+        tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir', theater: 'Théâtre' 
+    };
+
+    // Groupes visuels pour imiter l'interface officielle de Grepolis
+    const GROUPS = {
+        resources: ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm'],
+        military: ['barracks', 'docks', 'wall', 'academy', 'temple', 'market'],
+        special: ['hide', 'thermal', 'library', 'lighthouse', 'tower', 'statue', 'oracle', 'trade_office', 'theater']
     };
     
-    // Coordonnées de sprites entièrement réalignées et sans doublons (grille 50x50)
+    // Coordonnées exactes des sprites de bâtiments (50x50)
     const SPRITES = { 
-        main: [450, 0], lumber: [400, 0], farm: [150, 0], stoner: [200, 50], 
-        storage: [250, 50], ironer: [250, 0], barracks: [50, 0], temple: [300, 50], 
-        market: [0, 50], docks: [100, 0], academy: [0, 0], wall: [0, 100], 
+        main: [450, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
+        storage: [250, 50], farm: [150, 0], barracks: [50, 0], docks: [100, 0], 
+        wall: [0, 100], academy: [0, 0], temple: [300, 50], market: [0, 50], 
         hide: [200, 0], thermal: [350, 50], library: [400, 50], lighthouse: [450, 50], 
         tower: [50, 50], statue: [150, 50], oracle: [100, 50], trade_office: [300, 0], theater: [350, 0] 
     };
@@ -92,16 +98,16 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>🎨</span> Designer de Template (Niveaux Cibles)</div>
+                    <div class="section-title"><span>🎨</span> Designer de Template (Style Officiel)</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
                     <div style="margin-bottom: 12px; font-size: 11px; color: #F5DEB3;">
-                        Modifiez vos niveaux cibles. Les prérequis (Sénat, Entrepôt, etc.) sont calculés et appliqués automatiquement !
+                        Définissez vos niveaux cibles par catégorie. Les prérequis sont appliqués automatiquement.
                     </div>
                     
-                    <div id="designer-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); gap: 10px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 380px; overflow-y: auto;">
-                        <!-- Généré dynamiquement -->
+                    <div id="designer-container" style="display: flex; flex-direction: column; gap: 12px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 420px; overflow-y: auto;">
+                        <!-- Généré dynamiquement en lignes/groupes -->
                     </div>
 
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
@@ -231,7 +237,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec sprites corrigés et sans agora', 'info');
+        log('BUILD', 'Module initialisé avec layout de designer officiel par catégories', 'info');
     };
 
     module.isActive = function() {
@@ -275,20 +281,38 @@
     }
 
     function renderDesignerGrid() {
-        const grid = document.getElementById('designer-grid');
-        if (!grid) return;
+        const container = document.getElementById('designer-container');
+        if (!container) return;
 
-        grid.innerHTML = Object.keys(NAMES).map(bid => {
-            const sp = SPRITES[bid] || [0, 0];
-            const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
-            
+        const groupLabels = {
+            resources: '🌾 Ressources & Base',
+            military: '⚔️ Militaire & Ville',
+            special: '🏛️ Bâtiments Spéciaux'
+        };
+
+        container.innerHTML = Object.keys(GROUPS).map(groupKey => {
+            const bids = GROUPS[groupKey];
+            const itemsHtml = bids.map(bid => {
+                const sp = SPRITES[bid] || [0, 0];
+                const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
+                
+                return `
+                    <div style="width: 65px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 4px; text-align: center;" title="${NAMES[bid]}">
+                        <div style="width: 45px; height: 45px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
+                        <div style="font-size: 9px; color: #F5DEB3; margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
+                        <input type="number" min="0" max="50" value="${level}" 
+                            onchange="GU_Build.updateDesigner('${bid}', this.value)"
+                            style="width: 45px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 1px;" />
+                    </div>
+                `;
+            }).join('');
+
             return `
-                <div style="width: 70px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 6px; text-align: center;" title="${NAMES[bid]}">
-                    <div style="width: 50px; height: 50px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
-                    <div style="font-size: 10px; color: #F5DEB3; margin: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
-                    <input type="number" min="0" max="50" value="${level}" 
-                        onchange="GU_Build.updateDesigner('${bid}', this.value)"
-                        style="width: 50px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 12px; font-weight: bold; border-radius: 3px; padding: 2px;" />
+                <div style="border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 8px; margin-bottom: 4px;">
+                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold;">${groupLabels[groupKey]}</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        ${itemsHtml}
+                    </div>
                 </div>
             `;
         }).join('');
