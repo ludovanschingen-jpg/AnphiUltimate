@@ -10,20 +10,20 @@
         storage: 'Entrepôt', farm: 'Ferme', barracks: 'Caserne', docks: 'Port', 
         wall: 'Remparts', academy: 'Académie', temple: 'Temple', market: 'Marché', hide: 'Grotte',
         theater: 'Théâtre', thermal: 'Thermes', library: 'Bibliothèque', lighthouse: 'Phare', 
-        tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
+        tower: 'Tour', statue: 'Statue divine', trade_office: 'Comptoir' 
     };
 
     const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
-    const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
+    const RIGHT_SPECIALS = ['tower', 'statue', 'trade_office'];
     
+    // Coordonnées des sprites sans l'oracle
     const SPRITES = { 
-        main: [0, 0], lumber: [50, 0], stoner: [100, 0], ironer: [150, 0], 
-        storage: [200, 0], farm: [250, 0], barracks: [300, 0], docks: [350, 0], 
-        wall: [400, 0], academy: [450, 0], temple: [0, 50], market: [50, 50], 
-        hide: [100, 50], theater: [150, 50], thermal: [200, 50], library: [250, 50], 
-        lighthouse: [300, 50], tower: [350, 50], statue: [400, 50], oracle: [450, 50], 
-        trade_office: [0, 100] 
+        main: [450, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
+        storage: [250, 50], farm: [150, 0], barracks: [50, 0], docks: [100, 0], 
+        wall: [0, 100], academy: [0, 0], temple: [300, 50], market: [0, 50], 
+        hide: [200, 0], theater: [350, 0], thermal: [350, 50], library: [400, 50], 
+        lighthouse: [450, 50], tower: [100, 50], statue: [150, 50], trade_office: [300, 0] 
     };
 
     const FR_TO_ID = { 
@@ -39,8 +39,8 @@
         'grotte': 'hide', 'thermes': 'thermal', 
         'bibliotheque': 'library', 'bibliothèque': 'library',
         'phare': 'lighthouse', 'tour': 'tower', 
-        'statue': 'statue', 'oracle': 'oracle', 
-        'comptoir': 'trade_office', 'theatre': 'theater', 'théâtre': 'theater'
+        'statue': 'statue', 'comptoir': 'trade_office', 
+        'theatre': 'theater', 'théâtre': 'theater'
     };
 
     let buildData = {
@@ -234,7 +234,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec sprites corrigés et alignés', 'info');
+        log('BUILD', 'Module initialisé sans l\'oracle et avec sprites propres', 'info');
     };
 
     module.isActive = function() {
