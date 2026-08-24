@@ -1,7 +1,7 @@
 (function() {
     'use strict';
 
-    const BASE_URL = 'https://anphidet.github.io/AnphiUltimate';
+    const BASE_URL = 'https://ludovanschingen-jpg.github.io/AnphiUltimate';
     const WHITELIST_URL = `${BASE_URL}/whitelist.json`;
     const DISCORD_INVITE = 'https://discord.gg/54xUGVpxeb';
     const VERSION = '2.3.0';
@@ -170,7 +170,6 @@
 
     function checkWhitelist(callback) {
         console.log('[GU] Verification whitelist...');
-        
         GM_xmlhttpRequest({
             method: 'GET',
             url: `${WHITELIST_URL}?v=${Date.now()}`,
@@ -181,14 +180,10 @@
                         const playerName = getPlayerName().toLowerCase();
                         const worldId = getWorldName().toLowerCase();
                         const playerId = getPlayerId();
-                        
                         let access = null;
-                        
                         if (whitelistData.players) {
                             for (const entry of whitelistData.players) {
-                                const nameMatch = entry.name.toLowerCase() === playerName || 
-                                                  entry.playerId === playerId;
-                                
+                                const nameMatch = entry.name.toLowerCase() === playerName || entry.playerId === playerId;
                                 if (nameMatch) {
                                     if (!entry.servers || entry.servers.length === 0 || entry.servers.includes('*')) {
                                         access = entry;
@@ -201,7 +196,6 @@
                                 }
                             }
                         }
-                        
                         if (access) {
                             userAccess = {
                                 allowed: true,
@@ -244,7 +238,6 @@
     function showAccessDenied() {
         const playerName = getPlayerName();
         const worldId = getWorldName();
-        
         const overlay = document.createElement('div');
         overlay.className = 'access-denied-overlay';
         overlay.innerHTML = `
@@ -283,13 +276,12 @@
         const panel = document.createElement('div');
         panel.className = 'ultimate-panel';
         panel.id = 'ultimate-panel';
-        
+
         const tabsHtml = TABS_CONFIG.map(tab => {
             let classes = 'ultimate-tab';
             if (tab.id === 'info') classes += ' active';
             if (tab.disabled) classes += ' disabled';
             else if (!isModuleAllowed(tab.id) && tab.id !== 'settings') classes += ' locked';
-            
             return `<button class="${classes}" data-tab="${tab.id}">
                 <span class="tab-icon">${tab.icon}</span>${tab.name}
             </button>`;
@@ -318,14 +310,12 @@
         document.body.appendChild(panel);
 
         document.getElementById('ultimate-close').onclick = () => togglePanel();
-        
+
         document.querySelectorAll('.ultimate-tab').forEach(tab => {
             tab.onclick = () => {
                 if (tab.classList.contains('disabled')) return;
-                
                 const tabId = tab.dataset.tab;
                 const tabConfig = TABS_CONFIG.find(t => t.id === tabId);
-                
                 if (tab.classList.contains('locked')) {
                     document.querySelectorAll('.ultimate-tab').forEach(t => t.classList.remove('active'));
                     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -348,7 +338,6 @@
                     currentTab = tabId;
                     return;
                 }
-                
                 document.querySelectorAll('.ultimate-tab').forEach(t => t.classList.remove('active'));
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
@@ -362,10 +351,9 @@
         if (firstAllowedTab) {
             loadTab(firstAllowedTab);
         }
-        
+
         initDraggable(panel);
         preloadAllTabs();
-        
         log('SYSTEM', 'Interface chargee', 'success');
         log('SYSTEM', `Bienvenue ${getPlayerName()}!`, 'info');
     }
@@ -378,43 +366,33 @@
 
         header.addEventListener('mousedown', function(e) {
             if (e.target.closest('.ultimate-close')) return;
-            
             isDragging = true;
             hasMoved = false;
-            
             const rect = panel.getBoundingClientRect();
             startX = e.clientX;
             startY = e.clientY;
             startLeft = rect.left;
             startTop = rect.top;
-            
             panel.classList.add('dragging');
             panel.style.transform = 'none';
             panel.style.left = startLeft + 'px';
             panel.style.top = startTop + 'px';
-            
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', function(e) {
             if (!isDragging) return;
-            
             const deltaX = e.clientX - startX;
             const deltaY = e.clientY - startY;
-            
             if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
                 hasMoved = true;
             }
-            
             let newLeft = startLeft + deltaX;
             let newTop = startTop + deltaY;
-            
             const maxLeft = window.innerWidth - panel.offsetWidth;
             const maxTop = window.innerHeight - panel.offsetHeight;
-            
             newLeft = Math.max(0, Math.min(newLeft, maxLeft));
             newTop = Math.max(0, Math.min(newTop, maxTop));
-            
             panel.style.left = newLeft + 'px';
             panel.style.top = newTop + 'px';
         });
@@ -429,26 +407,20 @@
 
     function preloadAllTabs() {
         log('SYSTEM', 'Prechargement des modules...', 'info');
-        
         let loadIndex = 0;
         const tabsToLoad = TABS_CONFIG.filter(t => !t.disabled && isModuleAllowed(t.id) && t.id !== currentTab);
-        
         function loadNextTab() {
             if (loadIndex >= tabsToLoad.length) {
                 log('SYSTEM', 'Tous les modules precharges', 'success');
                 return;
             }
-            
             const tab = tabsToLoad[loadIndex];
             loadIndex++;
-            
             if (loadedTabs[tab.id]) {
                 loadNextTab();
                 return;
             }
-            
             const scriptUrl = `${BASE_URL}/${tab.script}?v=${Date.now()}`;
-            
             GM_xmlhttpRequest({
                 method: 'GET',
                 url: scriptUrl,
@@ -465,12 +437,9 @@
                                 GM_addStyle: GM_addStyle,
                                 GM_xmlhttpRequest: GM_xmlhttpRequest
                             };
-                            
                             const executeTab = new Function('module', response.responseText);
                             executeTab(tabModule);
-                            
                             loadedTabs[tab.id] = tabModule;
-                            
                             const content = document.getElementById(`tab-${tab.id}`);
                             if (content && tabModule.render) {
                                 content.innerHTML = '';
@@ -490,7 +459,6 @@
                 }
             });
         }
-        
         setTimeout(loadNextTab, 500);
     }
 
@@ -502,21 +470,16 @@
     function loadTab(tab) {
         if (!tab || tab.disabled) return;
         if (!isModuleAllowed(tab.id) && tab.id !== 'settings') return;
-        
         const content = document.getElementById(`tab-${tab.id}`);
         if (!content) return;
-
         if (loadedTabs[tab.id]) {
             if (loadedTabs[tab.id].onActivate) {
                 loadedTabs[tab.id].onActivate(content);
             }
             return;
         }
-
         content.innerHTML = '<div class="gu-loading"><div class="gu-loading-spinner">⏳</div>Chargement...</div>';
-
         const scriptUrl = `${BASE_URL}/${tab.script}?v=${Date.now()}`;
-
         GM_xmlhttpRequest({
             method: 'GET',
             url: scriptUrl,
@@ -533,15 +496,9 @@
                             GM_addStyle: GM_addStyle,
                             GM_xmlhttpRequest: GM_xmlhttpRequest
                         };
-                        
-                        const executeTab = new Function(
-                            'module',
-                            response.responseText
-                        );
+                        const executeTab = new Function('module', response.responseText);
                         executeTab(tabModule);
-                        
                         loadedTabs[tab.id] = tabModule;
-                        
                         if (currentTab === tab.id && tabModule.render) {
                             content.innerHTML = '';
                             tabModule.render(content);
@@ -598,7 +555,6 @@
     const initCheck = setInterval(() => {
         if (typeof uw.Game !== 'undefined' && uw.ITowns && uw.ITowns.getCurrentTown()) {
             clearInterval(initCheck);
-            
             checkWhitelist(function(allowed) {
                 if (allowed) {
                     createUI();
