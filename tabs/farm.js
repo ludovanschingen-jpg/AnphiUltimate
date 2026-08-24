@@ -4,6 +4,7 @@
     const GM_getValue = module.GM_getValue;
     const GM_setValue = module.GM_setValue;
     const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
+    const GM_addStyle = module.GM_addStyle;
 
     // Durées de base selon le choix utilisateur (en secondes)
     const DURATION_OPTIONS = {
@@ -21,7 +22,64 @@
         nextRunTime: 0  // timestamp ms du prochain run
     };
 
-    // ─── UI ──────────────────────────────────────────────────────────────────────
+    // ─── STYLES DU HUD FLOTTANT SUR L'ÉCRAN ─────────────────────────────────────
+
+    if (GM_addStyle) {
+        GM_addStyle(`
+            .gu-floating-hud {
+                position: fixed;
+                top: 15px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: linear-gradient(180deg, rgba(62, 47, 32, 0.95) 0%, rgba(30, 23, 15, 0.95) 100%);
+                border: 2px solid #D4AF37;
+                border-radius: 8px;
+                padding: 8px 18px;
+                z-index: 999999;
+                display: none;
+                align-items: center;
+                gap: 15px;
+                box-shadow: 0 5px 25px rgba(0,0,0,0.8);
+                font-family: 'Philosopher', Georgia, serif;
+                color: #F5DEB3;
+            }
+            .gu-floating-hud.active {
+                display: flex;
+            }
+            .gu-hud-status {
+                font-size: 12px;
+                font-weight: bold;
+                color: #81C784;
+                white-space: nowrap;
+            }
+            .gu-hud-status.randomizing {
+                color: #FFB74D;
+                animation: hud-pulse 1s infinite alternate;
+            }
+            @keyframes hud-pulse {
+                from { opacity: 0.6; }
+                to { opacity: 1; }
+            }
+            .gu-hud-btn {
+                background: linear-gradient(180deg, #E53935 0%, #B71C1C 100%);
+                border: 1px solid #FF5252;
+                color: white;
+                padding: 5px 12px;
+                border-radius: 4px;
+                font-family: 'Cinzel', serif;
+                font-size: 10px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .gu-hud-btn:hover {
+                transform: scale(1.05);
+                background: linear-gradient(180deg, #F44336 0%, #C62828 100%);
+            }
+        `);
+    }
+
+    // ─── UI DE L'ONGLET ──────────────────────────────────────────────────────────
 
     module.render = function(container) {
         container.innerHTML = `
@@ -34,13 +92,6 @@
                     <input type="checkbox" id="toggle-farm">
                     <span class="toggle-slider"></span>
                 </label>
-            </div>
-
-            <!-- BOUTON D'ARRÊT D'URGENCE TOUJOURS VISIBLE -->
-            <div style="margin-bottom: 15px;">
-                <button class="btn btn-danger btn-full" id="farm-emergency-stop" style="font-weight: bold; letter-spacing: 1px;">
-                    🛑 ARRÊT D'URGENCE
-                </button>
             </div>
 
             <div class="bot-section">
@@ -119,10 +170,54 @@
         `;
     };
 
+    // ─── GESTION DU HUD FLOTTANT SUR L'ÉCRAN ─────────────────────────────────────
+
+    function createFloatingHUD() {
+        if (document.getElementById('gu-screen-hud')) return;
+
+        const hud = document.createElement('div');
+        hud.id = 'gu-screen-hud';
+        hud.className = 'gu-floating-hud';
+        hud.innerHTML = `
+            <span>🌾 <strong>Auto Farm :</strong></span>
+            <span class="gu-hud-status" id="gu-hud-status-text">Actif (Sécurisé)</span>
+            <button class="gu-hud-btn" id="gu-hud-stop-btn">🛑 ARRÊT D'URGENCE</button>
+        `;
+        document.body.appendChild(hud);
+
+        document.getElementById('gu-hud-stop-btn').onclick = () => emergencyStop();
+    }
+
+    function updateFloatingHUD(statusText, isRandomizing = false) {
+        const hud = document.getElementById('gu-screen-hud');
+        const txt = document.getElementById('gu-hud-status-text');
+        if (!hud || !txt) return;
+
+        txt.textContent = statusText;
+        if (isRandomizing) {
+            txt.className = 'gu-hud-status randomizing';
+        } else {
+            txt.className = 'gu-hud-status';
+        }
+    }
+
+    function showFloatingHUD(show) {
+        let hud = document.getElementById('gu-screen-hud');
+        if (!hud && show) {
+            createFloatingHUD();
+            hud = document.getElementById('gu-screen-hud');
+        }
+        if (hud) {
+            if (show) hud.classList.add('active');
+            else hud.classList.remove('active');
+        }
+    }
+
     // ─── INIT ─────────────────────────────────────────────────────────────────────
 
     module.init = function() {
         loadData();
+        createFloatingHUD();
 
         document.getElementById('toggle-farm').checked    = farmData.enabled;
         document.getElementById('farm-mode').value        = farmData.settings.mode;
@@ -132,9 +227,6 @@
         updateIntervalLabel();
 
         document.getElementById('toggle-farm').onchange = (e) => toggleFarm(e.target.checked);
-
-        // Gestionnaire du bouton d'arrêt d'urgence
-        document.getElementById('farm-emergency-stop').onclick = () => emergencyStop();
 
         document.getElementById('farm-mode').onchange = (e) => {
             farmData.settings.mode = e.target.value;
@@ -167,10 +259,12 @@
             };
         });
 
-        if (farmData.enabled) toggleFarm(true);
+        if (farmData.enabled) {
+            toggleFarm(true);
+        }
 
         startTimer();
-        log('FARM', 'Module humanisé (panneaux multiples) initialisé', 'info');
+        log('FARM', 'Module humanisé avec HUD écran initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -182,15 +276,21 @@
         farmData.enabled = enabled;
         const ctrl   = document.getElementById('farm-control');
         const status = document.getElementById('farm-status');
+        const toggle = document.getElementById('toggle-farm');
+
+        if (toggle) toggle.checked = enabled;
 
         if (enabled) {
-            ctrl.classList.remove('inactive');
-            status.textContent = 'Actif (Sécurisé)';
-            log('FARM', 'Bot démarré avec filtres anti-détection', 'success');
+            if (ctrl) ctrl.classList.remove('inactive');
+            if (status) status.textContent = 'Actif (Sécurisé)';
+            showFloatingHUD(true);
+            updateFloatingHUD('Actif (Sécurisé)', false);
+            log('FARM', 'Bot démarré avec HUD écran actif', 'success');
             runFarmCycle();
         } else {
-            ctrl.classList.add('inactive');
-            status.textContent = 'En attente';
+            if (ctrl) ctrl.classList.add('inactive');
+            if (status) status.textContent = 'En attente';
+            showFloatingHUD(false);
             log('FARM', 'Bot arrêté', 'info');
             clearTimeout(farmData.interval);
             farmData.nextRunTime = 0;
@@ -215,7 +315,9 @@
         const status = document.getElementById('farm-status');
         if (status) status.textContent = 'Arrêt d\'urgence activé';
 
-        log('FARM', '🚨 ARRÊT D\'URGENCE activé ! Toutes les actions du bot ont été coupées.', 'error');
+        showFloatingHUD(false);
+
+        log('FARM', '🚨 ARRÊT D\'URGENCE activé depuis l\'écran ! Toutes les actions ont été coupées.', 'error');
         if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
     }
 
@@ -228,7 +330,6 @@
 
         if (finalMs < 120000) finalMs = 120000;
 
-        // 15% de chance d'une pause de fatigue humaine (allonge de 3 à 12 minutes)
         if (Math.random() < 0.15) {
             const breakMin = Math.floor(Math.random() * 10) + 3;
             const breakMs = breakMin * 60 * 1000;
@@ -243,13 +344,11 @@
 
     async function performRandomHumanActions() {
         if (!farmData.enabled) return;
-        const status = document.getElementById('farm-status');
         
         try {
-            if (status) status.textContent = 'Randomisation en cours...';
+            updateFloatingHUD('⚡ Randomisation en cours...', true);
             log('FARM', 'Comportement humain : Sélection et exécution de 2 tâches aléatoires...', 'info');
 
-            // Panneau des 5 actions possibles dans Grepolis
             const possibleTasks = [
                 { name: 'Rapports', type: uw.GPWindowMgr?.TYPE_REPORT },
                 { name: 'Carte', type: uw.GPWindowMgr?.TYPE_MAP },
@@ -260,7 +359,6 @@
 
             if (possibleTasks.length === 0) return;
 
-            // Mélanger le tableau et prendre 2 tâches différentes
             possibleTasks.sort(() => Math.random() - 0.5);
             const selectedTasks = possibleTasks.slice(0, 2);
 
@@ -272,13 +370,11 @@
                 if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
                     uw.GPWindowMgr.Create(task.type);
 
-                    // Attendre entre 2 et 4 secondes (2000 à 4000 ms)
-                    const waitTime = Math.floor(Math.random() * 2001) + 2000;
+                    const waitTime = Math.floor(Math.random() * 2001) + 2000; // 2 à 4 sec
                     await new Promise(r => setTimeout(r, waitTime));
 
                     if (!farmData.enabled) break;
 
-                    // Fermer la fenêtre
                     if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
                         uw.GPWindowMgr.CloseAllOpenWindowsOfType(task.type);
                     }
@@ -286,15 +382,14 @@
                     await new Promise(r => setTimeout(r, 3000));
                 }
 
-                // Petite pause entre les deux tâches
                 await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 500));
             }
 
         } catch (e) {
             console.error('[FARM Random Error]', e);
         } finally {
-            if (status && farmData.enabled) {
-                status.textContent = 'Actif (Sécurisé)';
+            if (farmData.enabled) {
+                updateFloatingHUD('Actif (Sécurisé)', false);
             }
         }
     }
@@ -304,19 +399,16 @@
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
-        // 1. Exécuter 2 tâches aléatoires du panneau (avec une chance sur deux ou systématique)
         if (Math.random() < 0.8) {
             await performRandomHumanActions();
         }
 
         if (!farmData.enabled) return;
 
-        // 2. Exécuter la récolte des villages paysans
         await executeFarmClaim();
 
         if (!farmData.enabled) return;
 
-        // 3. Planifier le prochain cycle avec jitter
         const opt = DURATION_OPTIONS[farmData.settings.duration];
         const nextDelay = getHumanizedDelayMs(opt.intervalSec);
         scheduleNext(nextDelay);
@@ -345,7 +437,6 @@
                 list = list.slice(offset).concat(list.slice(0, offset));
                 farmData.cycleCount++;
             } else {
-                // Mélange aléatoire (Shuffling)
                 list.sort(() => Math.random() - 0.5);
             }
 
