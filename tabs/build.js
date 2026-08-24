@@ -10,12 +10,12 @@
         storage: 'Entrepôt', farm: 'Ferme', barracks: 'Caserne', docks: 'Port', 
         wall: 'Remparts', academy: 'Académie', temple: 'Temple', market: 'Marché', hide: 'Grotte',
         theater: 'Théâtre', thermal: 'Thermes', library: 'Bibliothèque', lighthouse: 'Phare', 
-        tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
+        tower: 'Tour', statue: 'Statue divine', trade_office: 'Comptoir' 
     };
 
     const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
-    const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
+    const RIGHT_SPECIALS = ['tower', 'statue', 'trade_office'];
 
     const FR_TO_ID = { 
         'senat': 'main', 'sénat': 'main',
@@ -30,7 +30,7 @@
         'grotte': 'hide', 'thermes': 'thermal', 
         'bibliotheque': 'library', 'bibliothèque': 'library',
         'phare': 'lighthouse', 'tour': 'tower', 
-        'statue': 'statue', 'oracle': 'oracle', 'comptoir': 'trade_office', 
+        'statue': 'statue', 'comptoir': 'trade_office', 
         'theatre': 'theater', 'théâtre': 'theater'
     };
 
@@ -225,7 +225,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec les classes CSS natives du jeu', 'info');
+        log('BUILD', 'Module initialisé sans l\'oracle/obélisque', 'info');
     };
 
     module.isActive = function() {
