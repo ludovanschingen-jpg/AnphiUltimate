@@ -100,7 +100,7 @@
                         </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ Intervalle cible : <strong id="farm-interval-label">5 minutes</strong> (avec aléas et actions humaines simulées).
+                        ℹ️ Intervalle cible : <strong id="farm-interval-label">5 minutes</strong> (avec 2 tâches aléatoires et pauses humaines).
                     </div>
                 </div>
             </div>
@@ -133,7 +133,7 @@
 
         document.getElementById('toggle-farm').onchange = (e) => toggleFarm(e.target.checked);
 
-        // Gestionnaire du bouton d'arrêt d'urgence (toujours actif)
+        // Gestionnaire du bouton d'arrêt d'urgence
         document.getElementById('farm-emergency-stop').onclick = () => emergencyStop();
 
         document.getElementById('farm-mode').onchange = (e) => {
@@ -170,7 +170,7 @@
         if (farmData.enabled) toggleFarm(true);
 
         startTimer();
-        log('FARM', 'Module humanisé avec arrêt d\'urgence initialisé', 'info');
+        log('FARM', 'Module humanisé (panneaux multiples) initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -239,7 +239,7 @@
         return finalMs;
     }
 
-    // ─── ACTIONS ALÉATOIRES (HUMANISATION) ───────────────────────────────────────
+    // ─── ACTIONS ALÉATOIRES (PANNEAU DE 5 TÂCHES) ─────────────────────────────────
 
     async function performRandomHumanActions() {
         if (!farmData.enabled) return;
@@ -247,22 +247,47 @@
         
         try {
             if (status) status.textContent = 'Randomisation en cours...';
-            log('FARM', 'Comportement humain : Simulation d\'actions aléatoires (Rapports, Interface)...', 'info');
+            log('FARM', 'Comportement humain : Sélection et exécution de 2 tâches aléatoires...', 'info');
 
-            await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 500));
-            if (!farmData.enabled) return;
+            // Panneau des 5 actions possibles dans Grepolis
+            const possibleTasks = [
+                { name: 'Rapports', type: uw.GPWindowMgr?.TYPE_REPORT },
+                { name: 'Carte', type: uw.GPWindowMgr?.TYPE_MAP },
+                { name: 'Alliance', type: uw.GPWindowMgr?.TYPE_ALLIANCE },
+                { name: 'Forum Alliance', type: uw.GPWindowMgr?.TYPE_ALLIANCE_FORUM || uw.GPWindowMgr?.TYPE_FORUM },
+                { name: 'Rang / Classement', type: uw.GPWindowMgr?.TYPE_RANKING }
+            ].filter(t => t.type !== undefined);
 
-            if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
-                uw.GPWindowMgr.Create(uw.GPWindowMgr.TYPE_REPORT);
-                await new Promise(r => setTimeout(r, Math.floor(Math.random() * 3000) + 2000));
+            if (possibleTasks.length === 0) return;
+
+            // Mélanger le tableau et prendre 2 tâches différentes
+            possibleTasks.sort(() => Math.random() - 0.5);
+            const selectedTasks = possibleTasks.slice(0, 2);
+
+            for (const task of selectedTasks) {
+                if (!farmData.enabled) break;
+
+                log('FARM', `Action simulée : Ouverture de [${task.name}]`, 'info');
                 
-                if (!farmData.enabled) return;
-                
-                if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
-                    uw.GPWindowMgr.CloseAllOpenWindowsOfType(uw.GPWindowMgr.TYPE_REPORT);
+                if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
+                    uw.GPWindowMgr.Create(task.type);
+
+                    // Attendre entre 2 et 4 secondes (2000 à 4000 ms)
+                    const waitTime = Math.floor(Math.random() * 2001) + 2000;
+                    await new Promise(r => setTimeout(r, waitTime));
+
+                    if (!farmData.enabled) break;
+
+                    // Fermer la fenêtre
+                    if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
+                        uw.GPWindowMgr.CloseAllOpenWindowsOfType(task.type);
+                    }
+                } else {
+                    await new Promise(r => setTimeout(r, 3000));
                 }
-            } else {
-                await new Promise(r => setTimeout(r, Math.floor(Math.random() * 2500) + 1500));
+
+                // Petite pause entre les deux tâches
+                await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 500));
             }
 
         } catch (e) {
@@ -279,16 +304,19 @@
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
-        if (Math.random() < 0.6) {
+        // 1. Exécuter 2 tâches aléatoires du panneau (avec une chance sur deux ou systématique)
+        if (Math.random() < 0.8) {
             await performRandomHumanActions();
         }
 
         if (!farmData.enabled) return;
 
+        // 2. Exécuter la récolte des villages paysans
         await executeFarmClaim();
 
         if (!farmData.enabled) return;
 
+        // 3. Planifier le prochain cycle avec jitter
         const opt = DURATION_OPTIONS[farmData.settings.duration];
         const nextDelay = getHumanizedDelayMs(opt.intervalSec);
         scheduleNext(nextDelay);
@@ -317,6 +345,7 @@
                 list = list.slice(offset).concat(list.slice(0, offset));
                 farmData.cycleCount++;
             } else {
+                // Mélange aléatoire (Shuffling)
                 list.sort(() => Math.random() - 0.5);
             }
 
