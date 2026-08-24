@@ -27,13 +27,20 @@
         container.innerHTML = `
             <div class="main-control inactive" id="farm-control">
                 <div class="control-info">
-                    <div class="control-label">Auto Farm (Humain & Sécurisé)</div>
+                    <div class="control-label">Auto Farm (Anti-Détection Avancé)</div>
                     <div class="control-status" id="farm-status">En attente</div>
                 </div>
                 <label class="toggle-switch">
                     <input type="checkbox" id="toggle-farm">
                     <span class="toggle-slider"></span>
                 </label>
+            </div>
+
+            <!-- BOUTON D'ARRÊT D'URGENCE -->
+            <div style="margin-bottom: 15px;">
+                <button class="btn btn-danger btn-full" id="farm-emergency-stop" style="display: none; font-weight: bold; letter-spacing: 1px;">
+                    🛑 ARRÊT D'URGENCE
+                </button>
             </div>
 
             <div class="bot-section">
@@ -93,7 +100,7 @@
                         </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ Intervalle cible : <strong id="farm-interval-label">5 minutes</strong> (avec variations anti-détection).
+                        ℹ️ Intervalle cible : <strong id="farm-interval-label">5 minutes</strong> (avec aléas et actions humaines simulées).
                     </div>
                 </div>
             </div>
@@ -125,6 +132,9 @@
         updateIntervalLabel();
 
         document.getElementById('toggle-farm').onchange = (e) => toggleFarm(e.target.checked);
+
+        // Gestionnaire du bouton d'arrêt d'urgence
+        document.getElementById('farm-emergency-stop').onclick = () => emergencyStop();
 
         document.getElementById('farm-mode').onchange = (e) => {
             farmData.settings.mode = e.target.value;
@@ -160,7 +170,7 @@
         if (farmData.enabled) toggleFarm(true);
 
         startTimer();
-        log('FARM', 'Module humanisé initialisé', 'info');
+        log('FARM', 'Module humanisé avec arrêt d\'urgence initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -172,15 +182,18 @@
         farmData.enabled = enabled;
         const ctrl   = document.getElementById('farm-control');
         const status = document.getElementById('farm-status');
+        const stopBtn = document.getElementById('farm-emergency-stop');
 
         if (enabled) {
             ctrl.classList.remove('inactive');
             status.textContent = 'Actif (Sécurisé)';
+            if (stopBtn) stopBtn.style.display = 'block';
             log('FARM', 'Bot démarré avec filtres anti-détection', 'success');
             runFarmCycle();
         } else {
             ctrl.classList.add('inactive');
             status.textContent = 'En attente';
+            if (stopBtn) stopBtn.style.display = 'none';
             log('FARM', 'Bot arrêté', 'info');
             clearTimeout(farmData.interval);
             farmData.nextRunTime = 0;
@@ -190,21 +203,40 @@
         if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
     }
 
+    function emergencyStop() {
+        farmData.enabled = false;
+        clearTimeout(farmData.interval);
+        farmData.nextRunTime = 0;
+        saveData();
+
+        const toggle = document.getElementById('toggle-farm');
+        if (toggle) toggle.checked = false;
+
+        const ctrl = document.getElementById('farm-control');
+        if (ctrl) ctrl.classList.add('inactive');
+
+        const status = document.getElementById('farm-status');
+        if (status) status.textContent = 'Arrêt d\'urgence activé';
+
+        const stopBtn = document.getElementById('farm-emergency-stop');
+        if (stopBtn) stopBtn.style.display = 'none';
+
+        log('FARM', '🚨 ARRÊT D\'URGENCE activé ! Toutes les actions du bot ont été coupées.', 'error');
+        if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
+    }
+
     // ─── HUMANISATION & JITTER ───────────────────────────────────────────────────
 
     function getHumanizedDelayMs(baseSec) {
         const baseMs = baseSec * 1000;
-        
-        // Ajout d'un "jitter" aléatoire (entre -30 et +60 secondes de variation)
-        const jitterSec = Math.floor(Math.random() * 91) - 30; 
+        const jitterSec = Math.floor(Math.random() * 91) - 30; // -30s à +60s
         let finalMs = baseMs + (jitterSec * 1000);
 
-        // Sécurité : Ne jamais descendre sous les 2 minutes pour éviter le spam
         if (finalMs < 120000) finalMs = 120000;
 
-        // 12% de chance d'introduire une "pause de fatigue" humaine (allonge de 3 à 10 minutes)
-        if (Math.random() < 0.12) {
-            const breakMin = Math.floor(Math.random() * 8) + 3;
+        // 15% de chance d'une pause de fatigue humaine (allonge de 3 à 12 minutes)
+        if (Math.random() < 0.15) {
+            const breakMin = Math.floor(Math.random() * 10) + 3;
             const breakMs = breakMin * 60 * 1000;
             log('FARM', `Simulation humaine : Pause prolongée de ${breakMin} min...`, 'warning');
             finalMs += breakMs;
@@ -213,13 +245,63 @@
         return finalMs;
     }
 
+    // ─── ACTIONS ALÉATOIRES (HUMANISATION) ───────────────────────────────────────
+
+    async function performRandomHumanActions() {
+        if (!farmData.enabled) return;
+        const status = document.getElementById('farm-status');
+        
+        try {
+            if (status) status.textContent = 'Randomisation en cours...';
+            log('FARM', 'Comportement humain : Simulation d\'actions aléatoires (Rapports, Interface)...', 'info');
+
+            // Petite latence de départ
+            await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 500));
+            if (!farmData.enabled) return;
+
+            // Ouvre et ferme les rapports de façon aléatoire via le gestionnaire de fenêtres Grepolis
+            if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
+                uw.GPWindowMgr.Create(uw.GPWindowMgr.TYPE_REPORT);
+                await new Promise(r => setTimeout(r, Math.floor(Math.random() * 3000) + 2000));
+                
+                if (!farmData.enabled) return;
+                
+                // Fermeture des fenêtres de rapports ouvertes
+                if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
+                    uw.GPWindowMgr.CloseAllOpenWindowsOfType(uw.GPWindowMgr.TYPE_REPORT);
+                }
+            } else {
+                // Alternative si le gestionnaire de fenêtres varie : simple pause de navigation
+                await new Promise(r => setTimeout(r, Math.floor(Math.random() * 2500) + 1500));
+            }
+
+        } catch (e) {
+            console.error('[FARM Random Error]', e);
+        } finally {
+            if (status && farmData.enabled) {
+                status.textContent = 'Actif (Sécurisé)';
+            }
+        }
+    }
+
     // ─── CYCLE PRINCIPAL ─────────────────────────────────────────────────────────
 
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
+        // 1. Exécuter d'abord des actions aléatoires (ou pas à chaque tour, ex: 1 chance sur 2)
+        if (Math.random() < 0.6) {
+            await performRandomHumanActions();
+        }
+
+        if (!farmData.enabled) return;
+
+        // 2. Exécuter la récolte des villages
         await executeFarmClaim();
 
+        if (!farmData.enabled) return;
+
+        // 3. Planifier le prochain cycle
         const opt = DURATION_OPTIONS[farmData.settings.duration];
         const nextDelay = getHumanizedDelayMs(opt.intervalSec);
         scheduleNext(nextDelay);
@@ -248,20 +330,23 @@
                 list = list.slice(offset).concat(list.slice(0, offset));
                 farmData.cycleCount++;
             } else {
-                // Mélange aléatoire (Shuffling) pour casser l'ordre linéaire des îles
+                // Mélange aléatoire (Shuffling) pour casser l'ordre linéaire
                 list.sort(() => Math.random() - 0.5);
             }
 
             const ids = list.map(p => p.id);
             const opt = DURATION_OPTIONS[farmData.settings.duration];
 
+            if (!farmData.enabled) return;
             log('FARM', `Récolte: ${ids.length} île(s)...`, 'info');
 
-            // Petit délai humain avant d'envoyer l'action réseau (simulation de réaction)
             await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 500));
+            if (!farmData.enabled) return;
 
             await new Promise(r => uw.gpAjax.ajaxGet('farm_town_overviews', 'index', {}, false, () => r(), () => r()));
             await new Promise(r => setTimeout(r, 800));
+
+            if (!farmData.enabled) return;
 
             await new Promise((resolve) => {
                 uw.gpAjax.ajaxPost('farm_town_overviews', 'claim_loads_multiple', {
@@ -377,7 +462,7 @@
         if (r) r.textContent = farmData.stats.totalRes.toLocaleString();
     }
 
-    // ─── WEBHOOK ─────────────────────────────────────────────────────────────────
+    // ─── WEBHOOK ────────────────────────────────────────────────----------------─
 
     function sendWebhook(title, desc) {
         if (!farmData.settings.webhook) return;
