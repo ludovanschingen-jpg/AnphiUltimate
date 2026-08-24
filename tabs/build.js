@@ -13,12 +13,12 @@
         tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
     };
 
-    // Groupes : Bâtiments classiques (mono bloc) et Bâtiments spéciaux séparés par colonne
+    // Organisation exacte selon l'interface officielle de Grepolis
     const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Coordonnées exactes des sprites de bâtiments (50x50) alignées sur la matrice officielle 10x3
+    // Coordonnées exactes des sprites de bâtiments (50x50)
     const SPRITES = { 
         academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
         hide: [200, 0], ironer: [250, 0], trade_office: [300, 0], theater: [350, 0], 
@@ -97,15 +97,15 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>🎨</span> Designer de Template (Style Vues Ville)</div>
+                    <div class="section-title"><span>🎨</span> Designer de Template (Agencement Officiel)</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
                     <div style="margin-bottom: 12px; font-size: 11px; color: #F5DEB3;">
-                        Bâtiments classiques en bloc, et bâtiments spéciaux séparés (1 seul choix max par colonne).
+                        Bâtiments classiques en bloc, et bâtiments spéciaux séparés (1 seul choix max par côté).
                     </div>
                     
-                    <div id="designer-container" style="display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 450px; overflow-y: auto;">
+                    <div id="designer-container" style="display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 480px; overflow-y: auto;">
                         <!-- Généré dynamiquement -->
                     </div>
 
@@ -236,7 +236,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec layout mono-bloc et colonnes spéciales exclusives', 'info');
+        log('BUILD', 'Module initialisé avec layout officiel par blocs', 'info');
     };
 
     module.isActive = function() {
