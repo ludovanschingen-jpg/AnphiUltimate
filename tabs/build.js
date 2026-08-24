@@ -16,17 +16,6 @@
     const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
-    
-    // Matrice officielle exacte (l'obélisque en [50, 50] est ignoré, la Tour est en [50, 100] et l'Oracle en [100, 50])
-    const SPRITES = { 
-        academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
-        hide: [200, 0], ironer: [250, 0], trade_office: [300, 0], theater: [350, 0], 
-        lumber: [400, 0], main: [450, 0], 
-        market: [0, 50], oracle: [100, 50], statue: [150, 50], 
-        stoner: [200, 50], storage: [250, 50], temple: [300, 50], thermal: [350, 50], 
-        library: [400, 50], lighthouse: [450, 50], 
-        wall: [0, 100], tower: [50, 100] 
-    };
 
     const FR_TO_ID = { 
         'senat': 'main', 'sénat': 'main',
@@ -236,7 +225,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec la matrice officielle correcte', 'info');
+        log('BUILD', 'Module initialisé avec les classes CSS natives et l\'Oracle rétabli', 'info');
     };
 
     module.isActive = function() {
@@ -284,12 +273,13 @@
         if (!container) return;
 
         const renderItems = (bids) => bids.map(bid => {
-            const sp = SPRITES[bid] || [0, 0];
             const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
             
             return `
                 <div style="width: 65px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 4px; text-align: center;" title="${NAMES[bid]}">
-                    <div style="width: 45px; height: 45px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
+                    <div style="width: 45px; height: 45px; margin: 0 auto; display: flex; align-items: center; justify-content: center;">
+                        <div class="building_icon ${bid}" style="width: 45px; height: 45px; transform: scale(0.95);"></div>
+                    </div>
                     <div style="font-size: 9px; color: #F5DEB3; margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
                     <input type="number" min="0" max="50" value="${level}" 
                         onchange="GU_Build.updateDesigner('${bid}', this.value)"
@@ -672,9 +662,8 @@
                 $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;">File vide - Utilisez les boutons "+ FILE"</div>');
             } else {
                 $items.html(queue.map((it, i) => {
-                    const sp = SPRITES[it.buildingId] || [0, 0];
-                    return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${NAMES[it.buildingId]} niv.${it.level}">
-                        <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;"></div>
+                    return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="${NAMES[it.buildingId]} niv.${it.level}">
+                        <div class="building_icon ${it.buildingId}" style="width:40px;height:40px;"></div>
                         <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
                         <div onclick="event.stopPropagation();GU_Build.remove(${i})" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;display:none;">x</div>
                     </div>`;
@@ -738,9 +727,8 @@
             container.innerHTML = '<div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Sénat pour voir la file</div>';
         } else {
             container.innerHTML = queue.map((it, i) => {
-                const sp = SPRITES[it.buildingId] || [0, 0];
-                return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;cursor:pointer;" title="${NAMES[it.buildingId]} niv.${it.level}">
-                    <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;"></div>
+                return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="${NAMES[it.buildingId]} niv.${it.level}">
+                    <div class="building_icon ${it.buildingId}" style="width:40px;height:40px;"></div>
                     <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
                 </div>`;
             }).join('');
