@@ -10,21 +10,21 @@
         storage: 'Entrepôt', farm: 'Ferme', barracks: 'Caserne', docks: 'Port', 
         wall: 'Remparts', academy: 'Académie', temple: 'Temple', market: 'Marché', hide: 'Grotte',
         theater: 'Théâtre', thermal: 'Thermes', library: 'Bibliothèque', lighthouse: 'Phare', 
-        tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
+        tower: 'Tour', statue: 'Statue divine', trade_office: 'Comptoir' 
     };
 
-    // Association d'icônes/emojis propres et stables pour chaque bâtiment
+    // Icônes propres et stables (sans obélisque ni oracle)
     const ICONS = {
         main: '🏛️', lumber: '🪵', stoner: '⛏️', ironer: '🪙', 
         storage: '📦', farm: '🌾', barracks: '⚔️', docks: '⚓', 
         wall: '🧱', academy: '📜', temple: '⛪', market: '🛒', hide: '🕳️',
         theater: '🎭', thermal: '♨️', library: '📚', lighthouse: '🏮', 
-        tower: '🗼', statue: '🗽', oracle: '🔮', trade_office: '🤝'
+        tower: '🗼', statue: '🗽', trade_office: '🤝'
     };
 
     const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
-    const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
+    const RIGHT_SPECIALS = ['tower', 'statue', 'trade_office'];
 
     const FR_TO_ID = { 
         'senat': 'main', 'sénat': 'main',
@@ -39,7 +39,7 @@
         'grotte': 'hide', 'thermes': 'thermal', 
         'bibliotheque': 'library', 'bibliothèque': 'library',
         'phare': 'lighthouse', 'tour': 'tower', 
-        'statue': 'statue', 'oracle': 'oracle', 'comptoir': 'trade_office', 
+        'statue': 'statue', 'comptoir': 'trade_office', 
         'theatre': 'theater', 'théâtre': 'theater'
     };
 
@@ -234,7 +234,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec interface épurée par icônes/emojis garanties sans bug', 'info');
+        log('BUILD', 'Module initialisé avec icônes propres sans obélisque', 'info');
     };
 
     module.isActive = function() {
