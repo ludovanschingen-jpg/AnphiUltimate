@@ -17,16 +17,16 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Coordonnées de sprites corrigées et réalignées (sans l'obélisque)
+    // Coordonnées de sprites réalignées avec précision (sans l'obélisque)
     const SPRITES = { 
         main: [450, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
         storage: [250, 50], farm: [150, 0], barracks: [50, 0], docks: [100, 0], 
         wall: [0, 100], academy: [0, 0], temple: [300, 50], market: [0, 50], 
         hide: [200, 0], 
         // Spéciaux Gauche réalignés
-        theater: [200, 50], thermal: [400, 50], library: [450, 50], lighthouse: [350, 0], 
+        theater: [350, 0], thermal: [350, 50], library: [400, 50], lighthouse: [450, 50], 
         // Spéciaux Droite réalignés (sans l'obélisque)
-        tower: [350, 50], statue: [150, 50], oracle: [100, 50], trade_office: [300, 0] 
+        tower: [50, 100], statue: [150, 50], oracle: [100, 50], trade_office: [300, 0] 
     };
 
     const FR_TO_ID = { 
@@ -237,7 +237,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec icônes spéciales réalignées et sans obélisque', 'info');
+        log('BUILD', 'Module initialisé avec icônes réalignées et sans obélisque', 'info');
     };
 
     module.isActive = function() {
