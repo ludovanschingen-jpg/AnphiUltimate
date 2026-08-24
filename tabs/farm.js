@@ -6,11 +6,10 @@
     const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
     const GM_addStyle = module.GM_addStyle;
 
-    // Définition globale des options de durée (placée tout en haut pour éviter l'erreur)
+    // Options de durées officielles acceptées par le serveur Grepolis
     const DURATION_OPTIONS = {
-        1: { base: 300,  booty: 600 },
-        2: { base: 600,  booty: 1200 },
-        3: { base: 1200, booty: 2400 }
+        1: { label: '5 minutes',  base: 300,  booty: 600 },
+        2: { label: '20 minutes', base: 1200, booty: 2400 }
     };
 
     let farmData = {
@@ -128,7 +127,7 @@
                         </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ Automatisation complète : 2 tâches aléatoires (ouverture/fermeture) au début, puis récolte, puis timer aléatoire (10-17 min).
+                        ℹ️ Automatisation humaine : 2 tâches aléatoires (ouverture propre, pause, fermeture), puis récolte sécurisée, puis timer aléatoire (10-17 min).
                     </div>
                 </div>
             </div>
@@ -212,7 +211,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé corrigé initialisé', 'info');
+        log('FARM', 'Module humanisé (fermeture propre & serveur corrigé) initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -276,13 +275,13 @@
         return randomMins * 60 * 1000;
     }
 
-    // ─── TÂCHES ALÉATOIRES (OUVERTURE ET FERMETURE SYSTÉMATIQUE) ─────────────────
+    // ─── TÂCHES ALÉATOIRES (OUVERTURE ET FERMETURE PROPRE) ───────────────────────
 
     async function performRandomHumanActions() {
         if (!farmData.enabled) return;
         
         try {
-            log('FARM', 'Routine humaine : Exécution de 2 tâches aléatoires (ouverture & fermeture)...', 'info');
+            log('FARM', 'Routine humaine : Ouverture et fermeture progressive de 2 onglets...', 'info');
 
             const possibleTasks = [
                 { name: 'Rapports', type: uw.GPWindowMgr?.TYPE_REPORT },
@@ -300,25 +299,31 @@
             for (const task of selectedTasks) {
                 if (!farmData.enabled) break;
 
-                log('FARM', `Ouverture temporaire : [${task.name}]`, 'info');
+                log('FARM', `Ouverture de l'onglet : [${task.name}]`, 'info');
                 
                 if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
-                    uw.GPWindowMgr.Create(task.type);
+                    // Création et récupération de l'instance de la fenêtre
+                    const winInstance = uw.GPWindowMgr.Create(task.type);
 
+                    // Temps d'attente "humain" entre 2 et 4 secondes
                     const waitTime = Math.floor(Math.random() * 2001) + 2000;
                     await new Promise(r => setTimeout(r, waitTime));
 
                     if (!farmData.enabled) break;
 
                     log('FARM', `Fermeture de l'onglet : [${task.name}]`, 'info');
-                    if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
+                    // Fermeture propre via l'instance ou le gestionnaire
+                    if (winInstance && typeof winInstance.close === 'function') {
+                        winInstance.close();
+                    } else if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
                         uw.GPWindowMgr.CloseAllOpenWindowsOfType(task.type);
                     }
                 } else {
                     await new Promise(r => setTimeout(r, 3000));
                 }
 
-                await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 500));
+                // Petite pause naturelle entre les deux actions
+                await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 800));
             }
 
         } catch (e) {
@@ -334,7 +339,7 @@
         // 1. DÉBUT DU CYCLE : Affichage du bouton "Stop current routine"
         showStopButton(true);
 
-        // Exécuter les 2 tâches aléatoires (ouverture + attente 2-4s + fermeture)
+        // Exécuter les 2 tâches aléatoires (ouverture -> attente -> fermeture systématique)
         await performRandomHumanActions();
 
         if (!farmData.enabled) {
@@ -342,7 +347,7 @@
             return;
         }
 
-        // Exécuter la récolte des villages paysans
+        // Exécuter la récolte des villages paysans avec les bons paramètres
         await executeFarmClaim();
 
         if (!farmData.enabled) {
@@ -398,11 +403,14 @@
 
             if (!farmData.enabled) return;
 
+            // Utilisation des durées standard serveur valides (ex: option 1 = 5 min, option 2 = 20 min)
+            const activeOption = DURATION_OPTIONS[1]; 
+
             await new Promise((resolve) => {
                 uw.gpAjax.ajaxPost('farm_town_overviews', 'claim_loads_multiple', {
                     towns: ids,
-                    time_option_base:  DURATION_OPTIONS[2].base,
-                    time_option_booty: DURATION_OPTIONS[2].booty,
+                    time_option_base:  activeOption.base,
+                    time_option_booty: activeOption.booty,
                     claim_factor: 'normal'
                 }, false, (resp) => {
                     let realGain = 0;
