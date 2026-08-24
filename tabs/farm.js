@@ -36,9 +36,9 @@
                 </label>
             </div>
 
-            <!-- BOUTON D'ARRÊT D'URGENCE -->
+            <!-- BOUTON D'ARRÊT D'URGENCE TOUJOURS VISIBLE -->
             <div style="margin-bottom: 15px;">
-                <button class="btn btn-danger btn-full" id="farm-emergency-stop" style="display: none; font-weight: bold; letter-spacing: 1px;">
+                <button class="btn btn-danger btn-full" id="farm-emergency-stop" style="font-weight: bold; letter-spacing: 1px;">
                     🛑 ARRÊT D'URGENCE
                 </button>
             </div>
@@ -133,7 +133,7 @@
 
         document.getElementById('toggle-farm').onchange = (e) => toggleFarm(e.target.checked);
 
-        // Gestionnaire du bouton d'arrêt d'urgence
+        // Gestionnaire du bouton d'arrêt d'urgence (toujours actif)
         document.getElementById('farm-emergency-stop').onclick = () => emergencyStop();
 
         document.getElementById('farm-mode').onchange = (e) => {
@@ -182,18 +182,15 @@
         farmData.enabled = enabled;
         const ctrl   = document.getElementById('farm-control');
         const status = document.getElementById('farm-status');
-        const stopBtn = document.getElementById('farm-emergency-stop');
 
         if (enabled) {
             ctrl.classList.remove('inactive');
             status.textContent = 'Actif (Sécurisé)';
-            if (stopBtn) stopBtn.style.display = 'block';
             log('FARM', 'Bot démarré avec filtres anti-détection', 'success');
             runFarmCycle();
         } else {
             ctrl.classList.add('inactive');
             status.textContent = 'En attente';
-            if (stopBtn) stopBtn.style.display = 'none';
             log('FARM', 'Bot arrêté', 'info');
             clearTimeout(farmData.interval);
             farmData.nextRunTime = 0;
@@ -217,9 +214,6 @@
 
         const status = document.getElementById('farm-status');
         if (status) status.textContent = 'Arrêt d\'urgence activé';
-
-        const stopBtn = document.getElementById('farm-emergency-stop');
-        if (stopBtn) stopBtn.style.display = 'none';
 
         log('FARM', '🚨 ARRÊT D\'URGENCE activé ! Toutes les actions du bot ont été coupées.', 'error');
         if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
@@ -255,23 +249,19 @@
             if (status) status.textContent = 'Randomisation en cours...';
             log('FARM', 'Comportement humain : Simulation d\'actions aléatoires (Rapports, Interface)...', 'info');
 
-            // Petite latence de départ
             await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 500));
             if (!farmData.enabled) return;
 
-            // Ouvre et ferme les rapports de façon aléatoire via le gestionnaire de fenêtres Grepolis
             if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
                 uw.GPWindowMgr.Create(uw.GPWindowMgr.TYPE_REPORT);
                 await new Promise(r => setTimeout(r, Math.floor(Math.random() * 3000) + 2000));
                 
                 if (!farmData.enabled) return;
                 
-                // Fermeture des fenêtres de rapports ouvertes
                 if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
                     uw.GPWindowMgr.CloseAllOpenWindowsOfType(uw.GPWindowMgr.TYPE_REPORT);
                 }
             } else {
-                // Alternative si le gestionnaire de fenêtres varie : simple pause de navigation
                 await new Promise(r => setTimeout(r, Math.floor(Math.random() * 2500) + 1500));
             }
 
@@ -289,19 +279,16 @@
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
-        // 1. Exécuter d'abord des actions aléatoires (ou pas à chaque tour, ex: 1 chance sur 2)
         if (Math.random() < 0.6) {
             await performRandomHumanActions();
         }
 
         if (!farmData.enabled) return;
 
-        // 2. Exécuter la récolte des villages
         await executeFarmClaim();
 
         if (!farmData.enabled) return;
 
-        // 3. Planifier le prochain cycle
         const opt = DURATION_OPTIONS[farmData.settings.duration];
         const nextDelay = getHumanizedDelayMs(opt.intervalSec);
         scheduleNext(nextDelay);
@@ -330,7 +317,6 @@
                 list = list.slice(offset).concat(list.slice(0, offset));
                 farmData.cycleCount++;
             } else {
-                // Mélange aléatoire (Shuffling) pour casser l'ordre linéaire
                 list.sort(() => Math.random() - 0.5);
             }
 
@@ -462,7 +448,7 @@
         if (r) r.textContent = farmData.stats.totalRes.toLocaleString();
     }
 
-    // ─── WEBHOOK ────────────────────────────────────────────────----------------─
+    // ─── WEBHOOK ─────────────────────────────────────────────────────────────────
 
     function sendWebhook(title, desc) {
         if (!farmData.settings.webhook) return;
