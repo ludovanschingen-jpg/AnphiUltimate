@@ -19,8 +19,8 @@
         main: [450, 0], storage: [250, 50], farm: [150, 0], academy: [0, 0], 
         temple: [300, 50], barracks: [50, 0], docks: [100, 0], market: [0, 50], 
         hide: [200, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
-        wall: [50, 100], thermal: [100, 50], library: [400, 50], lighthouse: [350, 0], 
-        tower: [350, 50], statue: [150, 50], oracle: [50, 50], trade_office: [300, 0], theater: [450, 50] 
+        wall: [0, 100], thermal: [350, 50], library: [400, 50], lighthouse: [450, 50], 
+        tower: [100, 50], statue: [150, 50], oracle: [50, 50], trade_office: [300, 0], theater: [350, 0] 
     };
 
     const FR_TO_ID = { 
@@ -231,7 +231,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec correction des sprites & prérequis actifs', 'info');
+        log('BUILD', 'Module initialisé avec sprites corrigés & prérequis', 'info');
     };
 
     module.isActive = function() {
@@ -304,37 +304,29 @@
         renderDesignerGrid();
     }
 
-    // ─── GESTION DES PRÉREQUIS ACTIFS ET AUTOMATIQUES ─────────────────────────────
-
     function applyPrerequisites(bid, targetLevel) {
         buildData.designerTemplate[bid] = targetLevel;
 
         if (targetLevel <= 0) return;
 
-        // Bâtiments spéciaux exclusifs (Thermes, Bibliothèque, Phare, Tour) -> Un seul par ville, nécessite Sénat 24 & Entrepôt 22
         if (['thermal', 'library', 'lighthouse', 'tower'].includes(bid) && targetLevel > 0) {
             if ((buildData.designerTemplate['main'] || 0) < 24) buildData.designerTemplate['main'] = 24;
             if ((buildData.designerTemplate['storage'] || 0) < 22) buildData.designerTemplate['storage'] = 22;
         }
 
-        // Thermes : Sénat 24, Entrepôt 22, Ferme 35
         if (bid === 'thermal' && targetLevel > 0) {
             if ((buildData.designerTemplate['farm'] || 0) < 35) buildData.designerTemplate['farm'] = 35;
         }
-        // Bibliothèque : Sénat 24, Entrepôt 22, Académie 30
         if (bid === 'library' && targetLevel > 0) {
             if ((buildData.designerTemplate['academy'] || 0) < 30) buildData.designerTemplate['academy'] = 30;
         }
-        // Phare : Sénat 24, Entrepôt 22, Port 20
         if (bid === 'lighthouse' && targetLevel > 0) {
             if ((buildData.designerTemplate['docks'] || 0) < 20) buildData.designerTemplate['docks'] = 20;
         }
-        // Tour : Sénat 24, Entrepôt 22, Remparts 15
         if (bid === 'tower' && targetLevel > 0) {
             if ((buildData.designerTemplate['wall'] || 0) < 15) buildData.designerTemplate['wall'] = 15;
         }
 
-        // Académie haut niveau (ex: 34)
         if (bid === 'academy' && targetLevel >= 34) {
             if ((buildData.designerTemplate['main'] || 0) < 24) buildData.designerTemplate['main'] = 24;
             if ((buildData.designerTemplate['storage'] || 0) < 22) buildData.designerTemplate['storage'] = 22;
@@ -343,38 +335,30 @@
             if ((buildData.designerTemplate['stoner'] || 0) < 24) buildData.designerTemplate['stoner'] = 24;
             if ((buildData.designerTemplate['ironer'] || 0) < 24) buildData.designerTemplate['ironer'] = 24;
         }
-        // Académie de base
         if (bid === 'academy' && targetLevel >= 1) {
             if ((buildData.designerTemplate['main'] || 0) < 8) buildData.designerTemplate['main'] = 8;
             if ((buildData.designerTemplate['storage'] || 0) < 10) buildData.designerTemplate['storage'] = 10;
         }
-        // Caserne
         if (bid === 'barracks' && targetLevel >= 1) {
             if ((buildData.designerTemplate['main'] || 0) < 4) buildData.designerTemplate['main'] = 4;
         }
-        // Port
         if (bid === 'docks' && targetLevel >= 1) {
             if ((buildData.designerTemplate['main'] || 0) < 6) buildData.designerTemplate['main'] = 6;
             if ((buildData.designerTemplate['storage'] || 0) < 5) buildData.designerTemplate['storage'] = 5;
             if ((buildData.designerTemplate['lumber'] || 0) < 5) buildData.designerTemplate['lumber'] = 5;
         }
-        // Temple
         if (bid === 'temple' && targetLevel >= 1) {
             if ((buildData.designerTemplate['main'] || 0) < 5) buildData.designerTemplate['main'] = 5;
             if ((buildData.designerTemplate['storage'] || 0) < 8) buildData.designerTemplate['storage'] = 8;
         }
-        // Marché
         if (bid === 'market' && targetLevel >= 1) {
             if ((buildData.designerTemplate['main'] || 0) < 3) buildData.designerTemplate['main'] = 3;
             if ((buildData.designerTemplate['storage'] || 0) < 10) buildData.designerTemplate['storage'] = 10;
             if ((buildData.designerTemplate['stoner'] || 0) < 5) buildData.designerTemplate['stoner'] = 5;
         }
-        // Remparts
         if (bid === 'wall' && targetLevel >= 1) {
             if ((buildData.designerTemplate['main'] || 0) < 3) buildData.designerTemplate['main'] = 3;
-            if ((buildData.designerTemplate['silver'] || buildData.designerTemplate['ironer'] || 0) < 1) {
-                if ((buildData.designerTemplate['ironer'] || 0) < 1) buildData.designerTemplate['ironer'] = 1;
-            }
+            if ((buildData.designerTemplate['ironer'] || 0) < 1) buildData.designerTemplate['ironer'] = 1;
         }
     }
 
