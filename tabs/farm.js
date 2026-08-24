@@ -22,64 +22,49 @@
         nextRunTime: 0  // timestamp ms du prochain run
     };
 
-    // ─── STYLES DU HUD FLOTTANT SUR L'ÉCRAN ─────────────────────────────────────
+    // ─── STYLES DU BOUTON CENTRAL FLOTTANT (STYLE IMAGE) ─────────────────────────
 
     if (GM_addStyle) {
         GM_addStyle(`
-            .gu-floating-hud {
+            .gu-centered-stop-overlay {
                 position: fixed;
-                top: 15px;
+                top: 50%;
                 left: 50%;
-                transform: translateX(-50%);
-                background: linear-gradient(180deg, rgba(62, 47, 32, 0.95) 0%, rgba(30, 23, 15, 0.95) 100%);
-                border: 2px solid #D4AF37;
-                border-radius: 8px;
-                padding: 8px 18px;
-                z-index: 999999;
+                transform: translate(-50%, -50%);
+                z-index: 9999999;
                 display: none;
-                align-items: center;
-                gap: 15px;
-                box-shadow: 0 5px 25px rgba(0,0,0,0.8);
-                font-family: 'Philosopher', Georgia, serif;
-                color: #F5DEB3;
+                font-family: 'Cinzel', 'Philosopher', Georgia, serif;
+                pointer-events: none;
             }
-            .gu-floating-hud.active {
-                display: flex;
+            .gu-centered-stop-overlay.active {
+                display: block;
+                pointer-events: auto;
             }
-            .gu-hud-status {
-                font-size: 12px;
-                font-weight: bold;
-                color: #81C784;
-                white-space: nowrap;
-            }
-            .gu-hud-status.randomizing {
-                color: #FFB74D;
-                animation: hud-pulse 1s infinite alternate;
-            }
-            @keyframes hud-pulse {
-                from { opacity: 0.6; }
-                to { opacity: 1; }
-            }
-            .gu-hud-btn {
-                background: linear-gradient(180deg, #E53935 0%, #B71C1C 100%);
-                border: 1px solid #FF5252;
-                color: white;
-                padding: 5px 12px;
-                border-radius: 4px;
+            .gu-stop-routine-btn {
+                background: linear-gradient(145deg, #3a2b1c 0%, #1a1408 100%);
+                border: 2px solid #D4AF37;
+                border-radius: 6px;
+                color: #ffcccc;
+                padding: 12px 24px;
                 font-family: 'Cinzel', serif;
-                font-size: 10px;
+                font-size: 14px;
                 font-weight: bold;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+                box-shadow: 0 4px 20px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,215,0,0.3);
                 cursor: pointer;
-                transition: all 0.2s;
+                transition: all 0.2s ease;
+                letter-spacing: 0.5px;
             }
-            .gu-hud-btn:hover {
+            .gu-stop-routine-btn:hover {
                 transform: scale(1.05);
-                background: linear-gradient(180deg, #F44336 0%, #C62828 100%);
+                border-color: #FFD700;
+                color: #ffffff;
+                box-shadow: 0 6px 25px rgba(212,175,55,0.4), inset 0 1px 0 rgba(255,215,0,0.5);
             }
         `);
     }
 
-    // ─── UI DE L'ONGLET ──────────────────────────────────────────────────────────
+    // ─── UI DE L'ONGLET (SANS LE BOUTON D'ARRÊT) ─────────────────────────────────
 
     module.render = function(container) {
         container.innerHTML = `
@@ -170,46 +155,31 @@
         `;
     };
 
-    // ─── GESTION DU HUD FLOTTANT SUR L'ÉCRAN ─────────────────────────────────────
+    // ─── GESTION DU BOUTON CENTRAL FLOTTANT ──────────────────────────────────────
 
-    function createFloatingHUD() {
-        if (document.getElementById('gu-screen-hud')) return;
+    function createCenteredStopButton() {
+        if (document.getElementById('gu-centered-stop')) return;
 
-        const hud = document.createElement('div');
-        hud.id = 'gu-screen-hud';
-        hud.className = 'gu-floating-hud';
-        hud.innerHTML = `
-            <span>🌾 <strong>Auto Farm :</strong></span>
-            <span class="gu-hud-status" id="gu-hud-status-text">Actif (Sécurisé)</span>
-            <button class="gu-hud-btn" id="gu-hud-stop-btn">🛑 ARRÊT D'URGENCE</button>
+        const overlay = document.createElement('div');
+        overlay.id = 'gu-centered-stop';
+        overlay.className = 'gu-centered-stop-overlay';
+        overlay.innerHTML = `
+            <button class="gu-stop-routine-btn" id="gu-stop-btn-action">Stop current routine</button>
         `;
-        document.body.appendChild(hud);
+        document.body.appendChild(overlay);
 
-        document.getElementById('gu-hud-stop-btn').onclick = () => emergencyStop();
+        document.getElementById('gu-stop-btn-action').onclick = () => emergencyStop();
     }
 
-    function updateFloatingHUD(statusText, isRandomizing = false) {
-        const hud = document.getElementById('gu-screen-hud');
-        const txt = document.getElementById('gu-hud-status-text');
-        if (!hud || !txt) return;
-
-        txt.textContent = statusText;
-        if (isRandomizing) {
-            txt.className = 'gu-hud-status randomizing';
-        } else {
-            txt.className = 'gu-hud-status';
+    function showCenteredStopButton(show) {
+        let overlay = document.getElementById('gu-centered-stop');
+        if (!overlay && show) {
+            createCenteredStopButton();
+            overlay = document.getElementById('gu-centered-stop');
         }
-    }
-
-    function showFloatingHUD(show) {
-        let hud = document.getElementById('gu-screen-hud');
-        if (!hud && show) {
-            createFloatingHUD();
-            hud = document.getElementById('gu-screen-hud');
-        }
-        if (hud) {
-            if (show) hud.classList.add('active');
-            else hud.classList.remove('active');
+        if (overlay) {
+            if (show) overlay.classList.add('active');
+            else overlay.classList.remove('active');
         }
     }
 
@@ -217,7 +187,7 @@
 
     module.init = function() {
         loadData();
-        createFloatingHUD();
+        createCenteredStopButton();
 
         document.getElementById('toggle-farm').checked    = farmData.enabled;
         document.getElementById('farm-mode').value        = farmData.settings.mode;
@@ -264,7 +234,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé avec HUD écran initialisé', 'info');
+        log('FARM', 'Module humanisé avec bouton central initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -283,14 +253,13 @@
         if (enabled) {
             if (ctrl) ctrl.classList.remove('inactive');
             if (status) status.textContent = 'Actif (Sécurisé)';
-            showFloatingHUD(true);
-            updateFloatingHUD('Actif (Sécurisé)', false);
-            log('FARM', 'Bot démarré avec HUD écran actif', 'success');
+            showCenteredStopButton(true);
+            log('FARM', 'Bot démarré avec bouton central actif', 'success');
             runFarmCycle();
         } else {
             if (ctrl) ctrl.classList.add('inactive');
             if (status) status.textContent = 'En attente';
-            showFloatingHUD(false);
+            showCenteredStopButton(false);
             log('FARM', 'Bot arrêté', 'info');
             clearTimeout(farmData.interval);
             farmData.nextRunTime = 0;
@@ -315,9 +284,9 @@
         const status = document.getElementById('farm-status');
         if (status) status.textContent = 'Arrêt d\'urgence activé';
 
-        showFloatingHUD(false);
+        showCenteredStopButton(false);
 
-        log('FARM', '🚨 ARRÊT D\'URGENCE activé depuis l\'écran ! Toutes les actions ont été coupées.', 'error');
+        log('FARM', '🚨 STOP CURRENT ROUTINE : Toutes les actions ont été coupées.', 'error');
         if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
     }
 
@@ -346,7 +315,6 @@
         if (!farmData.enabled) return;
         
         try {
-            updateFloatingHUD('⚡ Randomisation en cours...', true);
             log('FARM', 'Comportement humain : Sélection et exécution de 2 tâches aléatoires...', 'info');
 
             const possibleTasks = [
@@ -387,10 +355,6 @@
 
         } catch (e) {
             console.error('[FARM Random Error]', e);
-        } finally {
-            if (farmData.enabled) {
-                updateFloatingHUD('Actif (Sécurisé)', false);
-            }
         }
     }
 
