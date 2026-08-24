@@ -5,30 +5,26 @@
     const GM_setValue = module.GM_setValue;
     const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
 
-    const NAMES = { main: 'Senat', lumber: 'Scierie', farm: 'Ferme', stoner: 'Carriere', storage: 'Entrepot', ironer: 'Mine', barracks: 'Caserne', temple: 'Temple', market: 'Marche', docks: 'Port', academy: 'Academie', wall: 'Remparts', hide: 'Grotte', thermal: 'Thermes', library: 'Bibliotheque', lighthouse: 'Phare', tower: 'Tour', statue: 'Statue', oracle: 'Oracle', trade_office: 'Comptoir', theater: 'Theatre' };
+    const NAMES = { main: 'Sénat', lumber: 'Scierie', farm: 'Ferme', stoner: 'Carrière', storage: 'Entrepôt', ironer: 'Mine d\'argent', barracks: 'Caserne', temple: 'Temple', market: 'Marché', docks: 'Port', academy: 'Académie', wall: 'Remparts', hide: 'Grotte', thermal: 'Thermes', library: 'Bibliothèque', lighthouse: 'Phare', tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir', theater: 'Théâtre' };
+    
+    // Coordonnées des sprites de bâtiments (50x50)
     const SPRITES = { main: [450, 0], storage: [250, 50], farm: [150, 0], academy: [0, 0], temple: [300, 50], barracks: [50, 0], docks: [100, 0], market: [0, 50], hide: [200, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], wall: [50, 100], theater: [350, 50], thermal: [350, 0], library: [450, 50], lighthouse: [100, 50], tower: [400, 50], statue: [150, 50], oracle: [50, 50], trade_office: [300, 0] };
+
     const FR_TO_ID = { 
         'senat': 'main', 'sénat': 'main',
-        'scierie': 'lumber', 
-        'ferme': 'farm', 
+        'scierie': 'lumber', 'ferme': 'farm', 
         'carriere': 'stoner', 'carrière': 'stoner',
         'entrepot': 'storage', 'entrepôt': 'storage',
-        'mine': 'ironer', "mine d'argent": 'ironer', 'argent': 'ironer',
-        'caserne': 'barracks', 
-        'temple': 'temple', 
+        'mine': 'ironer', "mine d'argent": 'ironer',
+        'caserne': 'barracks', 'temple': 'temple', 
         'marche': 'market', 'marché': 'market',
-        'port': 'docks', 
-        'academie': 'academy', 'académie': 'academy',
+        'port': 'docks', 'academie': 'academy', 'académie': 'academy',
         'remparts': 'wall', 'muraille': 'wall',
-        'grotte': 'hide', 
-        'thermes': 'thermal', 
+        'grotte': 'hide', 'thermes': 'thermal', 
         'bibliotheque': 'library', 'bibliothèque': 'library',
-        'phare': 'lighthouse', 
-        'tour': 'tower', 
-        'statue': 'statue', 'statue divine': 'statue',
-        'oracle': 'oracle', 
-        'comptoir': 'trade_office', 
-        'theatre': 'theater', 'théâtre': 'theater'
+        'phare': 'lighthouse', 'tour': 'tower', 
+        'statue': 'statue', 'oracle': 'oracle', 
+        'comptoir': 'trade_office', 'theatre': 'theater', 'théâtre': 'theater'
     };
 
     let buildData = {
@@ -37,7 +33,11 @@
         settings: { interval: 2, webhook: '' },
         stats: { built: 0, gratisClaimed: 0 },
         queues: {},
-        templates: { buildings: [], researches: [] },
+        designerTemplate: {
+            main: 25, storage: 30, farm: 45, lumber: 40, stoner: 40, ironer: 40,
+            barracks: 30, docks: 30, wall: 25, academy: 36, temple: 25, market: 20,
+            hide: 10, thermal: 1, library: 0, lighthouse: 0, tower: 0, statue: 0, oracle: 0, trade_office: 0, theater: 0
+        },
         nextCheckTime: 0
     };
 
@@ -48,7 +48,7 @@
         container.innerHTML = `
             <div class="main-control inactive" id="build-control">
                 <div class="control-info">
-                    <div class="control-label">Auto Build & Recherche</div>
+                    <div class="control-label">Auto Build & Designer</div>
                     <div class="control-status" id="build-status">En attente</div>
                 </div>
                 <label class="toggle-switch">
@@ -81,23 +81,27 @@
                 </div>
             </div>
 
-            <!-- SECTION TEMPLATES -->
+            <!-- SECTION DESIGNER DE TEMPLATES VISUEL -->
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>📋</span> Gestion des Templates</div>
+                    <div class="section-title"><span>🎨</span> Designer de Template (Niveaux Cibles)</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
-                    <div style="margin-bottom: 10px; font-size: 11px; color: #F5DEB3;">
-                        Définissez vos modèles de construction/recherche et appliquez-les rapidement à vos villes.
+                    <div style="margin-bottom: 12px; font-size: 11px; color: #F5DEB3;">
+                        Modifiez les niveaux cibles de vos bâtiments. Utilisez les flèches ou tapez directement la valeur au clavier. Les prérequis sont gérés automatiquement !
                     </div>
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
-                        <button class="btn btn-success" id="btn-save-template" style="flex: 1; padding: 8px; font-size: 11px;">💾 Sauvegarder Actuel</button>
-                        <button class="btn" id="btn-apply-template" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#2196F3,#1976D2); color:white; border:none;">▶ Appliquer Ville</button>
+                    
+                    <div id="designer-grid" style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 250px; overflow-y: auto;">
+                        <!-- Généré dynamiquement -->
                     </div>
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button class="btn" id="btn-reset-queue" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#FF9800,#F57C00); color:white; border:none;">🔄 Réinitialiser File</button>
-                        <button class="btn btn-danger" id="btn-delete-template" style="flex: 1; padding: 8px; font-size: 11px;">🗑️ Supprimer Template</button>
+
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
+                        <button class="btn btn-success" id="btn-save-designer" style="flex: 1; padding: 8px; font-size: 11px;">💾 Sauvegarder Template</button>
+                        <button class="btn" id="btn-apply-designer" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#2196F3,#1976D2); color:white; border:none;">▶ Appliquer à la Ville</button>
+                    </div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+                        <button class="btn" id="btn-reset-designer" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#FF9800,#F57C00); color:white; border:none;">🔄 Réinitialiser Niveaux</button>
                     </div>
                 </div>
             </div>
@@ -162,7 +166,7 @@
                 </div>
                 <div class="section-content">
                     <div id="build-queue-display" style="min-height: 60px; display: flex; flex-wrap: wrap; gap: 6px;">
-                        <div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Senat pour ajouter des constructions</div>
+                        <div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Sénat pour voir la file</div>
                     </div>
                 </div>
             </div>
@@ -176,6 +180,7 @@
         document.getElementById('toggle-gratis').checked = buildData.gratisEnabled;
         document.getElementById('build-interval').value = buildData.settings.interval;
         
+        renderDesignerGrid();
         updateStats();
         updateQueueDisplay();
         
@@ -191,11 +196,10 @@
             }
         };
 
-        // Événements des boutons de template
-        document.getElementById('btn-save-template').onclick = () => saveTemplate();
-        document.getElementById('btn-apply-template').onclick = () => applyTemplate();
-        document.getElementById('btn-reset-queue').onclick = () => resetQueue();
-        document.getElementById('btn-delete-template').onclick = () => deleteTemplate();
+        // Boutons du Designer
+        document.getElementById('btn-save-designer').onclick = () => saveDesignerTemplate();
+        document.getElementById('btn-apply-designer').onclick = () => generateQueueFromDesigner();
+        document.getElementById('btn-reset-designer').onclick = () => resetDesignerGrid();
 
         document.querySelectorAll('#tab-build .section-header').forEach(h => {
             h.onclick = () => {
@@ -218,10 +222,11 @@
         
         window.GU_Build = {
             add: (bid, lvl) => addToQueue(bid, lvl),
-            remove: (idx) => removeFromQueue(idx)
+            remove: (idx) => removeFromQueue(idx),
+            updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialise avec gestion des templates', 'info');
+        log('BUILD', 'Module initialisé avec Designer Visuel & Prérequis', 'info');
     };
 
     module.isActive = function() {
@@ -229,20 +234,124 @@
     };
 
     module.onActivate = function(container) {
+        renderDesignerGrid();
         updateStats();
         updateQueueDisplay();
     };
+
+    // ─── RENDU DU DESIGNER VISUEL (GRILLE DE BÂTIMENTS) ───────────────────────────
+
+    function renderDesignerGrid() {
+        const grid = document.getElementById('designer-grid');
+        if (!grid) return;
+
+        grid.innerHTML = Object.keys(NAMES).map(bid => {
+            const sp = SPRITES[bid] || [0, 0];
+            const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
+            
+            return `
+                <div style="width: 55px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 4px; text-align: center;" title="${NAMES[bid]}">
+                    <div style="width: 45px; height: 45px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
+                    <div style="font-size: 9px; color: #F5DEB3; margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
+                    <input type="number" min="0" max="50" value="${level}" 
+                        onchange="GU_Build.updateDesigner('${bid}', this.value)"
+                        style="width: 40px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; border-radius: 3px;" />
+                </div>
+            `;
+        }).join('');
+    }
+
+    function updateDesignerLevel(bid, val) {
+        let num = parseInt(val) || 0;
+        if (num < 0) num = 0;
+        
+        // Appliquer la logique de dépendance intelligente (Prérequis automatiques)
+        applyPrerequisites(bid, num);
+        
+        saveData();
+        renderDesignerGrid();
+    }
+
+    // ─── GESTION INTELLIGENTE DES PRÉREQUIS ──────────────────────────────────────
+
+    function applyPrerequisites(bid, targetLevel) {
+        buildData.designerTemplate[bid] = targetLevel;
+
+        // Règles de prérequis classiques Grepolis
+        if (bid === 'academy' && targetLevel >= 34) {
+            // Exemple : Académie 34 requiert Sénat 24, Entrepôt 22, Ferme 22, Scierie 24, Carrière 24, Mine 24
+            if (buildData.designerTemplate['main'] < 24) buildData.designerTemplate['main'] = 24;
+            if (buildData.designerTemplate['storage'] < 22) buildData.designerTemplate['storage'] = 22;
+            if (buildData.designerTemplate['farm'] < 22) buildData.designerTemplate['farm'] = 22;
+            if (buildData.designerTemplate['lumber'] < 24) buildData.designerTemplate['lumber'] = 24;
+            if (buildData.designerTemplate['stoner'] < 24) buildData.designerTemplate['stoner'] = 24;
+            if (buildData.designerTemplate['ironer'] < 24) buildData.designerTemplate['ironer'] = 24;
+        }
+        if (bid === 'academy' && targetLevel >= 1) {
+            if (buildData.designerTemplate['main'] < 8) buildData.designerTemplate['main'] = 8;
+            if (buildData.designerTemplate['storage'] < 10) buildData.designerTemplate['storage'] = 10;
+        }
+        if (bid === 'barracks' && targetLevel >= 1) {
+            if (buildData.designerTemplate['main'] < 4) buildData.designerTemplate['main'] = 4;
+        }
+        if (bid === 'docks' && targetLevel >= 1) {
+            if (buildData.designerTemplate['main'] < 6) buildData.designerTemplate['main'] = 6;
+            if (buildData.designerTemplate['storage'] < 5) buildData.designerTemplate['storage'] = 5;
+            if (buildData.designerTemplate['wood'] < 5 && buildData.designerTemplate['lumber'] < 5) buildData.designerTemplate['lumber'] = 5;
+        }
+    }
+
+    function saveDesignerTemplate() {
+        saveData();
+        log('BUILD', 'Template du Designer sauvegardé avec succès.', 'success');
+    }
+
+    function generateQueueFromDesigner() {
+        const tid = uw.Game.townId;
+        const town = uw.ITowns.getTown(tid);
+        if (!town) {
+            log('BUILD', 'Ville introuvable pour appliquer le template.', 'error');
+            return;
+        }
+
+        const newQueue = [];
+        const buildingList = town.buildingList(); // Récupère les niveaux actuels
+
+        // Générer les étapes de construction nécessaires pour atteindre les niveaux cibles du designer
+        for (const [bid, targetLvl] of Object.entries(buildData.designerTemplate)) {
+            if (targetLvl <= 0) continue;
+            const currentLvl = buildingList[bid] ? buildingList[bid].level : 0;
+            
+            for (let l = currentLvl + 1; l <= targetLvl; l++) {
+                newQueue.push({ buildingId: bid, level: l });
+            }
+        }
+
+        buildData.queues[tid] = newQueue;
+        saveData();
+        refreshSenateQueue();
+        updateStats();
+        updateQueueDisplay();
+        log('BUILD', `Template appliqué ! ${newQueue.length} constructions planifiées.`, 'success');
+    }
+
+    function resetDesignerGrid() {
+        for (let key in buildData.designerTemplate) {
+            buildData.designerTemplate[key] = 0;
+        }
+        saveData();
+        renderDesignerGrid();
+        log('BUILD', 'Niveaux du Designer réinitialisés.', 'info');
+    }
 
     // ─── OUVERTURE AUTOMATIQUE DES FENÊTRES (Sénat & Académie) ───────────────────
 
     function openRequiredWindows() {
         try {
             if (uw.GPWindowMgr) {
-                // Ouvrir le sénat à gauche si pas déjà ouvert
                 if (typeof uw.GPWindowMgr.HasOpenWindowsOfType === 'function' && !uw.GPWindowMgr.HasOpenWindowsOfType(uw.GPWindowMgr.TYPE_SENATE)) {
                     uw.GPWindowMgr.Create(uw.GPWindowMgr.TYPE_SENATE);
                 }
-                // Ouvrir l'académie à droite si pas déjà ouverte
                 if (typeof uw.GPWindowMgr.HasOpenWindowsOfType === 'function' && !uw.GPWindowMgr.HasOpenWindowsOfType(uw.GPWindowMgr.TYPE_ACADEMY)) {
                     uw.GPWindowMgr.Create(uw.GPWindowMgr.TYPE_ACADEMY);
                 }
@@ -250,53 +359,6 @@
         } catch (e) {
             console.error('[GU Build] Erreur ouverture fenêtres:', e);
         }
-    }
-
-    // ─── GESTION DES TEMPLATES ───────────────────────────────────────────────────
-
-    function saveTemplate() {
-        const tid = uw.Game.townId;
-        const currentQueue = buildData.queues[tid] || [];
-        if (currentQueue.length === 0) {
-            log('BUILD', 'Impossible de sauvegarder : la file actuelle est vide.', 'warning');
-            return;
-        }
-        buildData.templates.buildings = JSON.parse(JSON.stringify(currentQueue));
-        saveData();
-        log('BUILD', `Template sauvegardé avec succès (${currentQueue.length} éléments).`, 'success');
-    }
-
-    function applyTemplate() {
-        const tid = uw.Game.townId;
-        const template = buildData.templates.buildings || [];
-        if (template.length === 0) {
-            log('BUILD', 'Aucun template de construction enregistré.', 'warning');
-            return;
-        }
-        buildData.queues[tid] = JSON.parse(JSON.stringify(template));
-        saveData();
-        refreshSenateQueue();
-        updateStats();
-        updateQueueDisplay();
-        uw.$('.ab-btn').remove();
-        log('BUILD', 'Template appliqué à la ville actuelle !', 'success');
-    }
-
-    function resetQueue() {
-        const tid = uw.Game.townId;
-        buildData.queues[tid] = [];
-        saveData();
-        refreshSenateQueue();
-        updateStats();
-        updateQueueDisplay();
-        uw.$('.ab-btn').remove();
-        log('BUILD', 'File d\'attente réinitialisée pour cette ville.', 'info');
-    }
-
-    function deleteTemplate() {
-        buildData.templates.buildings = [];
-        saveData();
-        log('BUILD', 'Template de construction supprimé.', 'warning');
     }
 
     // ─── CONTRÔLES PRINCIPAUX ────────────────────────────────────────────────────
@@ -311,7 +373,6 @@
             status.textContent = 'Actif';
             log('BUILD', 'Bot de construction démarré', 'success');
             
-            // Ouvrir automatiquement le Sénat et l'Académie au lancement
             openRequiredWindows();
 
             buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
@@ -587,7 +648,7 @@
         
         const queue = buildData.queues[uw.Game.townId] || [];
         if (queue.length === 0) {
-            container.innerHTML = '<div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Senat pour ajouter des constructions</div>';
+            container.innerHTML = '<div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Sénat pour voir la file</div>';
         } else {
             container.innerHTML = queue.map((it, i) => {
                 const sp = SPRITES[it.buildingId] || [0, 0];
@@ -638,7 +699,7 @@
             settings: buildData.settings,
             stats: buildData.stats,
             queues: buildData.queues,
-            templates: buildData.templates
+            designerTemplate: buildData.designerTemplate
         }));
     }
 
