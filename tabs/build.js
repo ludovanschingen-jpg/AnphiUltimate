@@ -13,37 +13,9 @@
         tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
     };
 
-    // Organisation exacte demandée
     const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
-    
-    // Coordonnées de sprites séquentielles et rigoureusement alignées (grille 10 colonnes)
-    const SPRITES = { 
-        main: [0, 0], lumber: [50, 0], stoner: [100, 0], ironer: [150, 0], 
-        storage: [200, 0], farm: [250, 0], barracks: [300, 0], docks: [350, 0], 
-        wall: [400, 0], academy: [450, 0], temple: [0, 50], market: [50, 50], 
-        hide: [100, 50], theater: [150, 50], thermal: [200, 50], library: [250, 50], 
-        lighthouse: [300, 50], tower: [350, 50], statue: [400, 50], oracle: [450, 50], 
-        trade_office: [0, 100] 
-    };
-
-    const FR_TO_ID = { 
-        'senat': 'main', 'sénat': 'main',
-        'scierie': 'lumber', 'ferme': 'farm', 
-        'carriere': 'stoner', 'carrière': 'stoner',
-        'entrepot': 'storage', 'entrepôt': 'storage',
-        'mine': 'ironer', "mine d'argent": 'ironer',
-        'caserne': 'barracks', 'temple': 'temple', 
-        'marche': 'market', 'marché': 'market',
-        'port': 'docks', 'academie': 'academy', 'académie': 'academy',
-        'remparts': 'wall', 'muraille': 'wall',
-        'grotte': 'hide', 'thermes': 'thermal', 
-        'bibliotheque': 'library', 'bibliothèque': 'library',
-        'phare': 'lighthouse', 'tour': 'tower', 
-        'statue': 'statue', 'oracle': 'oracle', 
-        'comptoir': 'trade_office', 'theatre': 'theater', 'théâtre': 'theater'
-    };
 
     let buildData = {
         enabled: false,
@@ -102,7 +74,7 @@
                 </div>
                 <div class="section-content">
                     <div style="margin-bottom: 12px; font-size: 11px; color: #F5DEB3;">
-                        Bâtiments classiques et colonnes spéciales exclusives (1 seul choix max par côté).
+                        Configuration propre et claire par blocs. Prérequis gérés automatiquement.
                     </div>
                     
                     <div id="designer-container" style="display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 480px; overflow-y: auto;">
@@ -236,7 +208,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec layout de designer officiel corrigé', 'info');
+        log('BUILD', 'Module initialisé avec cartes textuelles propres et sans décalage', 'info');
     };
 
     module.isActive = function() {
@@ -284,22 +256,20 @@
         if (!container) return;
 
         const renderItems = (bids) => bids.map(bid => {
-            const sp = SPRITES[bid] || [0, 0];
             const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
             
             return `
-                <div style="width: 60px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 4px; text-align: center;" title="${NAMES[bid]}">
-                    <div style="width: 45px; height: 45px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
-                    <div style="font-size: 9px; color: #F5DEB3; margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
+                <div style="width: 85px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 6px; text-align: center;" title="${NAMES[bid]}">
+                    <div style="font-size: 10px; color: #F5DEB3; margin-bottom: 4px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
                     <input type="number" min="0" max="50" value="${level}" 
                         onchange="GU_Build.updateDesigner('${bid}', this.value)"
-                        style="width: 42px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 1px;" />
+                        style="width: 50px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 12px; font-weight: bold; border-radius: 3px; padding: 2px; margin: 0 auto;" />
                 </div>
             `;
         }).join('');
 
         container.innerHTML = `
-            <!-- Bloc Bâtiments Classiques (Mono Bloc) -->
+            <!-- Bloc Bâtiments Classiques -->
             <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
                 <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">🏛️ Bâtiments Classiques</div>
                 <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
@@ -331,7 +301,6 @@
         if (num < 0) num = 0;
         if (num > 50) num = 50;
         
-        // Règle d'exclusion mutuelle stricte par colonne
         if (LEFT_SPECIALS.includes(bid) && num > 0) {
             LEFT_SPECIALS.forEach(s => {
                 if (s !== bid) buildData.designerTemplate[s] = 0;
@@ -675,9 +644,8 @@
                 $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;">File vide - Utilisez les boutons "+ FILE"</div>');
             } else {
                 $items.html(queue.map((it, i) => {
-                    const sp = SPRITES[it.buildingId] || [0, 0];
                     return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${NAMES[it.buildingId]} niv.${it.level}">
-                        <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;"></div>
+                        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#F5DEB3;font-size:10px;font-weight:bold;text-align:center;">${NAMES[it.buildingId].substring(0,3)}</div>
                         <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
                         <div onclick="event.stopPropagation();GU_Build.remove(${i})" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;display:none;">x</div>
                     </div>`;
@@ -741,9 +709,8 @@
             container.innerHTML = '<div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Sénat pour voir la file</div>';
         } else {
             container.innerHTML = queue.map((it, i) => {
-                const sp = SPRITES[it.buildingId] || [0, 0];
                 return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;cursor:pointer;" title="${NAMES[it.buildingId]} niv.${it.level}">
-                    <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;"></div>
+                    <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#F5DEB3;font-size:10px;font-weight:bold;text-align:center;">${NAMES[it.buildingId].substring(0,3)}</div>
                     <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
                 </div>`;
             }).join('');
