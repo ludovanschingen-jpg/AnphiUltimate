@@ -17,7 +17,6 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Grille de sprites séquentielle, propre et sans doublons (50x50)
     const SPRITES = { 
         main: [0, 0], lumber: [50, 0], stoner: [100, 0], ironer: [150, 0], 
         storage: [200, 0], farm: [250, 0], barracks: [300, 0], docks: [350, 0], 
@@ -298,7 +297,6 @@
         }).join('');
 
         container.innerHTML = `
-            <!-- Bloc Classique -->
             <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
                 <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">🏛️ Bâtiments Classiques</div>
                 <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
@@ -306,7 +304,6 @@
                 </div>
             </div>
 
-            <!-- Deux colonnes pour les Bâtiments Spéciaux exclusifs -->
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                 <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
                     <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">⭐ Spéciaux Gauche (1 Max)</div>
