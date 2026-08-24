@@ -5,10 +5,24 @@
     const GM_setValue = module.GM_setValue;
     const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
 
-    const NAMES = { main: 'Sénat', lumber: 'Scierie', farm: 'Ferme', stoner: 'Carrière', storage: 'Entrepôt', ironer: 'Mine d\'argent', barracks: 'Caserne', temple: 'Temple', market: 'Marché', docks: 'Port', academy: 'Académie', wall: 'Remparts', hide: 'Grotte', thermal: 'Thermes', library: 'Bibliothèque', lighthouse: 'Phare', tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir', theater: 'Théâtre' };
+    const NAMES = { 
+        main: 'Sénat', lumber: 'Scierie', farm: 'Ferme', stoner: 'Carrière', 
+        storage: 'Entrepôt', ironer: 'Mine d\'argent', barracks: 'Caserne', 
+        temple: 'Temple', market: 'Marché', docks: 'Port', academy: 'Académie', 
+        wall: 'Remparts', hide: 'Grotte', thermal: 'Thermes', library: 'Bibliothèque', 
+        lighthouse: 'Phare', tower: 'Tour', statue: 'Statue divine', 
+        oracle: 'Oracle', trade_office: 'Comptoir', theater: 'Théâtre' 
+    };
     
-    // Coordonnées des sprites de bâtiments (50x50)
-    const SPRITES = { main: [450, 0], storage: [250, 50], farm: [150, 0], academy: [0, 0], temple: [300, 50], barracks: [50, 0], docks: [100, 0], market: [0, 50], hide: [200, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], wall: [50, 100], theater: [350, 50], thermal: [350, 0], library: [450, 50], lighthouse: [100, 50], tower: [400, 50], statue: [150, 50], oracle: [50, 50], trade_office: [300, 0] };
+    // Coordonnées corrigées des sprites de bâtiments (50x50)
+    const SPRITES = { 
+        main: [450, 0], storage: [250, 50], farm: [150, 0], academy: [0, 0], 
+        temple: [300, 50], barracks: [50, 0], docks: [100, 0], market: [0, 50], 
+        hide: [200, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
+        wall: [50, 100], theater: [350, 50], thermal: [350, 0], library: [450, 50], 
+        lighthouse: [100, 50], tower: [400, 50], statue: [150, 50], oracle: [50, 50], 
+        trade_office: [300, 0] 
+    };
 
     const FR_TO_ID = { 
         'senat': 'main', 'sénat': 'main',
@@ -33,11 +47,7 @@
         settings: { interval: 2, webhook: '' },
         stats: { built: 0, gratisClaimed: 0 },
         queues: {},
-        designerTemplate: {
-            main: 25, storage: 30, farm: 45, lumber: 40, stoner: 40, ironer: 40,
-            barracks: 30, docks: 30, wall: 25, academy: 36, temple: 25, market: 20,
-            hide: 10, thermal: 1, library: 0, lighthouse: 0, tower: 0, statue: 0, oracle: 0, trade_office: 0, theater: 0
-        },
+        designerTemplate: {},
         nextCheckTime: 0
     };
 
@@ -81,7 +91,7 @@
                 </div>
             </div>
 
-            <!-- SECTION DESIGNER DE TEMPLATES VISUEL -->
+            <!-- SECTION DESIGNER DE TEMPLATES AGRANDIE ET VISIBLE -->
             <div class="bot-section">
                 <div class="section-header">
                     <div class="section-title"><span>🎨</span> Designer de Template (Niveaux Cibles)</div>
@@ -89,18 +99,19 @@
                 </div>
                 <div class="section-content">
                     <div style="margin-bottom: 12px; font-size: 11px; color: #F5DEB3;">
-                        Modifiez les niveaux cibles de vos bâtiments. Utilisez les flèches ou tapez directement la valeur au clavier. Les prérequis sont gérés automatiquement !
+                        Modifiez les niveaux cibles. Cliquez pour importer les niveaux actuels de votre ville, ou tapez directement la valeur souhaitée. Les prérequis sont gérés automatiquement !
                     </div>
                     
-                    <div id="designer-grid" style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 250px; overflow-y: auto;">
+                    <div id="designer-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(75px, 1fr)); gap: 10px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 380px; overflow-y: auto;">
                         <!-- Généré dynamiquement -->
                     </div>
 
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
+                        <button class="btn" id="btn-import-town" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#9C27B0,#7B1FA2); color:white; border:none;">📥 Importer Niveaux Ville</button>
                         <button class="btn btn-success" id="btn-save-designer" style="flex: 1; padding: 8px; font-size: 11px;">💾 Sauvegarder Template</button>
-                        <button class="btn" id="btn-apply-designer" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#2196F3,#1976D2); color:white; border:none;">▶ Appliquer à la Ville</button>
                     </div>
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+                        <button class="btn" id="btn-apply-designer" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#2196F3,#1976D2); color:white; border:none;">▶ Appliquer à la Ville</button>
                         <button class="btn" id="btn-reset-designer" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#FF9800,#F57C00); color:white; border:none;">🔄 Réinitialiser Niveaux</button>
                     </div>
                 </div>
@@ -176,6 +187,9 @@
     module.init = function() {
         loadData();
         
+        // Si le template designer est vide, initialiser avec les niveaux de la ville active ou des zéros propres
+        initializeDesignerTemplate();
+
         document.getElementById('toggle-build').checked = buildData.enabled;
         document.getElementById('toggle-gratis').checked = buildData.gratisEnabled;
         document.getElementById('build-interval').value = buildData.settings.interval;
@@ -197,6 +211,7 @@
         };
 
         // Boutons du Designer
+        document.getElementById('btn-import-town').onclick = () => importTownLevelsToDesigner();
         document.getElementById('btn-save-designer').onclick = () => saveDesignerTemplate();
         document.getElementById('btn-apply-designer').onclick = () => generateQueueFromDesigner();
         document.getElementById('btn-reset-designer').onclick = () => resetDesignerGrid();
@@ -226,7 +241,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec Designer Visuel & Prérequis', 'info');
+        log('BUILD', 'Module initialisé avec Designer Agrandi & Lecture Ville', 'info');
     };
 
     module.isActive = function() {
@@ -239,7 +254,40 @@
         updateQueueDisplay();
     };
 
-    // ─── RENDU DU DESIGNER VISUEL (GRILLE DE BÂTIMENTS) ───────────────────────────
+    // ─── LECTURE DES NIVEAUX DE LA VILLE ACTUELLE ────────────────────────────────
+
+    function initializeDesignerTemplate() {
+        if (!buildData.designerTemplate || Object.keys(buildData.designerTemplate).length === 0) {
+            buildData.designerTemplate = {};
+            importTownLevelsToDesigner(true);
+        }
+    }
+
+    function importTownLevelsToDesigner(silent = false) {
+        try {
+            const town = uw.ITowns.getCurrentTown();
+            if (!town) {
+                if (!silent) log('BUILD', 'Aucune ville active détectée pour importer les niveaux.', 'warning');
+                return;
+            }
+            const buildingList = town.buildingList ? town.buildingList() : {};
+            
+            for (const bid of Object.keys(NAMES)) {
+                const currentObj = buildingList[bid];
+                const lvl = currentObj ? (currentObj.level || currentObj.akt_level || 0) : 0;
+                buildData.designerTemplate[bid] = lvl;
+            }
+            
+            saveData();
+            renderDesignerGrid();
+            if (!silent) log('BUILD', 'Niveaux actuels de la ville importés dans le designer !', 'success');
+        } catch (e) {
+            console.error('[GU Build] Erreur import niveaux ville:', e);
+            if (!silent) log('BUILD', 'Erreur lors de l\'importation des niveaux.', 'error');
+        }
+    }
+
+    // ─── RENDU DU DESIGNER VISUEL (GRILLE AGRANDIE) ──────────────────────────────
 
     function renderDesignerGrid() {
         const grid = document.getElementById('designer-grid');
@@ -250,12 +298,12 @@
             const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
             
             return `
-                <div style="width: 55px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 4px; text-align: center;" title="${NAMES[bid]}">
-                    <div style="width: 45px; height: 45px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
-                    <div style="font-size: 9px; color: #F5DEB3; margin: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
+                <div style="width: 70px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 6px; text-align: center;" title="${NAMES[bid]}">
+                    <div style="width: 50px; height: 50px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
+                    <div style="font-size: 10px; color: #F5DEB3; margin: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${NAMES[bid]}</div>
                     <input type="number" min="0" max="50" value="${level}" 
                         onchange="GU_Build.updateDesigner('${bid}', this.value)"
-                        style="width: 40px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; border-radius: 3px;" />
+                        style="width: 50px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 12px; font-weight: bold; border-radius: 3px; padding: 2px;" />
                 </div>
             `;
         }).join('');
@@ -264,40 +312,37 @@
     function updateDesignerLevel(bid, val) {
         let num = parseInt(val) || 0;
         if (num < 0) num = 0;
+        if (num > 50) num = 50;
         
-        // Appliquer la logique de dépendance intelligente (Prérequis automatiques)
         applyPrerequisites(bid, num);
-        
         saveData();
         renderDesignerGrid();
     }
 
-    // ─── GESTION INTELLIGENTE DES PRÉREQUIS ──────────────────────────────────────
+    // ─── GESTION DES PRÉREQUIS AUTOMATIQUES ──────────────────────────────────────
 
     function applyPrerequisites(bid, targetLevel) {
         buildData.designerTemplate[bid] = targetLevel;
 
-        // Règles de prérequis classiques Grepolis
         if (bid === 'academy' && targetLevel >= 34) {
-            // Exemple : Académie 34 requiert Sénat 24, Entrepôt 22, Ferme 22, Scierie 24, Carrière 24, Mine 24
-            if (buildData.designerTemplate['main'] < 24) buildData.designerTemplate['main'] = 24;
-            if (buildData.designerTemplate['storage'] < 22) buildData.designerTemplate['storage'] = 22;
-            if (buildData.designerTemplate['farm'] < 22) buildData.designerTemplate['farm'] = 22;
-            if (buildData.designerTemplate['lumber'] < 24) buildData.designerTemplate['lumber'] = 24;
-            if (buildData.designerTemplate['stoner'] < 24) buildData.designerTemplate['stoner'] = 24;
-            if (buildData.designerTemplate['ironer'] < 24) buildData.designerTemplate['ironer'] = 24;
+            if ((buildData.designerTemplate['main'] || 0) < 24) buildData.designerTemplate['main'] = 24;
+            if ((buildData.designerTemplate['storage'] || 0) < 22) buildData.designerTemplate['storage'] = 22;
+            if ((buildData.designerTemplate['farm'] || 0) < 22) buildData.designerTemplate['farm'] = 22;
+            if ((buildData.designerTemplate['lumber'] || 0) < 24) buildData.designerTemplate['lumber'] = 24;
+            if ((buildData.designerTemplate['stoner'] || 0) < 24) buildData.designerTemplate['stoner'] = 24;
+            if ((buildData.designerTemplate['ironer'] || 0) < 24) buildData.designerTemplate['ironer'] = 24;
         }
         if (bid === 'academy' && targetLevel >= 1) {
-            if (buildData.designerTemplate['main'] < 8) buildData.designerTemplate['main'] = 8;
-            if (buildData.designerTemplate['storage'] < 10) buildData.designerTemplate['storage'] = 10;
+            if ((buildData.designerTemplate['main'] || 0) < 8) buildData.designerTemplate['main'] = 8;
+            if ((buildData.designerTemplate['storage'] || 0) < 10) buildData.designerTemplate['storage'] = 10;
         }
         if (bid === 'barracks' && targetLevel >= 1) {
-            if (buildData.designerTemplate['main'] < 4) buildData.designerTemplate['main'] = 4;
+            if ((buildData.designerTemplate['main'] || 0) < 4) buildData.designerTemplate['main'] = 4;
         }
         if (bid === 'docks' && targetLevel >= 1) {
-            if (buildData.designerTemplate['main'] < 6) buildData.designerTemplate['main'] = 6;
-            if (buildData.designerTemplate['storage'] < 5) buildData.designerTemplate['storage'] = 5;
-            if (buildData.designerTemplate['wood'] < 5 && buildData.designerTemplate['lumber'] < 5) buildData.designerTemplate['lumber'] = 5;
+            if ((buildData.designerTemplate['main'] || 0) < 6) buildData.designerTemplate['main'] = 6;
+            if ((buildData.designerTemplate['storage'] || 0) < 5) buildData.designerTemplate['storage'] = 5;
+            if ((buildData.designerTemplate['lumber'] || 0) < 5) buildData.designerTemplate['lumber'] = 5;
         }
     }
 
@@ -315,12 +360,12 @@
         }
 
         const newQueue = [];
-        const buildingList = town.buildingList(); // Récupère les niveaux actuels
+        const buildingList = town.buildingList ? town.buildingList() : {};
 
-        // Générer les étapes de construction nécessaires pour atteindre les niveaux cibles du designer
         for (const [bid, targetLvl] of Object.entries(buildData.designerTemplate)) {
             if (targetLvl <= 0) continue;
-            const currentLvl = buildingList[bid] ? buildingList[bid].level : 0;
+            const currentObj = buildingList[bid];
+            const currentLvl = currentObj ? (currentObj.level || currentObj.akt_level || 0) : 0;
             
             for (let l = currentLvl + 1; l <= targetLvl; l++) {
                 newQueue.push({ buildingId: bid, level: l });
@@ -341,10 +386,10 @@
         }
         saveData();
         renderDesignerGrid();
-        log('BUILD', 'Niveaux du Designer réinitialisés.', 'info');
+        log('BUILD', 'Niveaux du Designer réinitialisés à 0.', 'info');
     }
 
-    // ─── OUVERTURE AUTOMATIQUE DES FENÊTRES (Sénat & Académie) ───────────────────
+    // ─── OUVERTURE AUTOMATIQUE DES FENÊTRES ──────────────────────────────────────
 
     function openRequiredWindows() {
         try {
