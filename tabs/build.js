@@ -1,4 +1,4 @@
-// Builder revision 2026-08-25 — File Auto Recherches 100% alignée sur le style du Sénat
+// Builder revision 2026-08-25 — File Auto Recherches ultra-robuste dans l'Académie
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -458,7 +458,7 @@ module.isActive = function() {
 module.onActivate = function(container) {
     updateStats();
     updateQueueDisplay();
-    refreshTemplateSelect(document.getElementById('tpl-select') ? document.getElementById('tpl-select').value : undefined);
+    refreshTemplateSelect(document.getElementById('tpl-select') ? document.getElementById('tpl-select'].value : undefined);
 };
 
 function toggleBuild(enabled) {
@@ -801,15 +801,18 @@ function injectAcademyQueue() {
     const $w = uw.$('.gpwindow_content:visible');
     if (!$w.length) return;
     
-    const isAcademy = $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
+    // Vérification large et garantie de la fenêtre Académie
+    const windowText = $w.text() || '';
+    const isAcademy = windowText.includes('Points de recherche') || windowText.includes('Recherche') || $w.find('.research_technology, .research_list, [class*="research"]').length > 0;
     if (!isAcademy) return;
 
-    // Trouve la file de recherche native de l'Académie pour positionner notre file juste en dessous (.after)
-    let $target = $w.find('.research_order, .research_queue, [class*="research_order"]');
+    // Cherche la file de recherche native par divers sélecteurs possibles
+    let $target = $w.find('.research_order, .research_queue, [class*="research_order"], [class*="research_queue"]');
+    
     if (!$target.length) {
-        $w.find('div, span').each(function() {
+        $w.find('div, span, p').each(function() {
             const txt = uw.$(this).text();
-            if (txt && txt.includes('File de recherche')) {
+            if (txt && (txt.includes('File de recherche') || txt.includes('Research'))) {
                 const $box = uw.$(this).closest('.CGameDataQueue, .game_data_queue, div');
                 if ($box.length) {
                     $target = $box;
@@ -818,10 +821,10 @@ function injectAcademyQueue() {
             }
         });
     }
-    if (!$target || !$target.length) {
-        $target = $w.find('.research_list').first();
+
+    if (!$target.length) {
+        $target = $w.find('.research_list, .left_side').first();
     }
-    if (!$target.length) return;
 
     if ($w.css('overflow') !== 'auto') {
         $w.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
@@ -830,14 +833,21 @@ function injectAcademyQueue() {
     const tid = uw.Game.townId;
     const rQueue = (buildData.researchQueues && buildData.researchQueues[tid]) || [];
 
-    // Copie exacte du bloc structurel du Sénat ("File Auto Build") adapté pour les recherches
-    $target.after(`<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;z-index:100;position:relative;">
+    const queueHtml = `<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;z-index:100;position:relative;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
             <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Recherches</span>
             <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${rQueue.length}</span>
         </div>
         <div class="research-queue-items" style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;"></div>
-    </div>`);
+    </div>`;
+
+    // Injection avec fallback garanti (si l'élément natif n'est pas trouvé, l'élément s'ajoute directement dans la fenêtre)
+    if ($target.length) {
+        $target.after(queueHtml);
+    } else {
+        $w.append(queueHtml);
+    }
+    
     refreshAcademyQueue();
 }
 
@@ -853,7 +863,6 @@ function refreshAcademyQueue() {
         if (rQueue.length === 0) {
             $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;width:100%;">File vide - Utilisez les boutons "+ FILE" sur les recherches</div>');
         } else {
-            // Style de cellule identique au Sénat (boîte 50x50px avec bordure #8B6914)
             $items.html(rQueue.map((rid, i) => {
                 return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getResearchName(rid)}">
                     <div class="research_icon research40x40 ${rid}" style="width:40px;height:40px;margin:3px auto;"></div>
@@ -913,7 +922,8 @@ function addBuildButtons() {
 function addResearchButtons() {
     const $w = uw.$('.gpwindow_content:visible');
     if (!$w.length) return;
-    const isAcademy = $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
+    const windowText = $w.text() || '';
+    const isAcademy = windowText.includes('Points de recherche') || windowText.includes('Recherche') || $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
     if (!isAcademy) return;
 
     $w.find('.research_technology, .research').each(function() {
