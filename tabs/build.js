@@ -17,14 +17,17 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Coordonnées 100% décodées et validées (Permutation Remparts et Comptoir effectuée)
+    // Le dictionnaire PARFAIT et VERROUILLÉ : Remparts et Comptoir permutés, Oracle circulaire.
     const SPRITES = { 
-        main: [450, 0], lumber: [400, 0], stoner: [200, 50], ironer: [50, 50], 
-        storage: [0, 0], farm: [150, 0], barracks: [100, 0], docks: [50, 0], 
-        wall: [0, 100], academy: [250, 50], temple: [250, 0], market: [0, 50], 
-        hide: [200, 0], 
-        theater: [350, 50], thermal: [400, 50], library: [300, 0], lighthouse: [350, 0], 
-        tower: [300, 50], statue: [150, 50], oracle: [50, 100], trade_office: [450, 50] 
+        academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
+        hide: [200, 0], ironer: [250, 0], library: [300, 0], lighthouse: [350, 0], 
+        lumber: [400, 0], main: [450, 0], 
+        
+        market: [0, 50], oracle: [100, 50], statue: [150, 50], 
+        stoner: [200, 50], storage: [250, 50], temple: [300, 50], theater: [350, 50], 
+        thermal: [400, 50], tower: [450, 50], 
+        
+        wall: [50, 100], trade_office: [0, 100] 
     };
 
     const FR_TO_ID = { 
@@ -211,7 +214,7 @@
             resetDesigner: () => resetDesignerGrid()
         };
 
-        log('BUILD', 'Module initialisé avec Modal Géante et icônes parfaites', 'info');
+        log('BUILD', 'Module initialisé avec Modal Géante et icônes corrigées', 'info');
     };
 
     module.isActive = function() { return buildData.enabled || buildData.gratisEnabled; };
