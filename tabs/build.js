@@ -17,17 +17,17 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Le dictionnaire PARFAIT et VERROUILLÉ : Remparts et Comptoir permutés, Oracle circulaire.
+    // Coordonnées avec la permutation Temple <-> Comptoir commercial
     const SPRITES = { 
         academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
         hide: [200, 0], ironer: [250, 0], library: [300, 0], lighthouse: [350, 0], 
         lumber: [400, 0], main: [450, 0], 
         
         market: [0, 50], oracle: [100, 50], statue: [150, 50], 
-        stoner: [200, 50], storage: [250, 50], temple: [300, 50], theater: [350, 50], 
+        stoner: [200, 50], storage: [250, 50], trade_office: [300, 50], theater: [350, 50], 
         thermal: [400, 50], tower: [450, 50], 
         
-        wall: [50, 100], trade_office: [0, 100] 
+        wall: [50, 100], temple: [0, 100] 
     };
 
     const FR_TO_ID = { 
@@ -50,48 +50,107 @@
     let senateWatcherInterval = null;
     let gratisInterval = null;
 
+    // --- FONCTION POUR RENDRE LA FENÊTRE DÉPLAÇABLE ---
+    function makeDraggable(elmnt, header) {
+        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+        
+        header.onmousedown = dragMouseDown;
+
+        function dragMouseDown(e) {
+            e = e || window.event;
+            // Ne pas initier le glisser-déposer si on clique sur le bouton fermer
+            if (e.target.tagName.toLowerCase() === 'div' && e.target.textContent.includes('Fermer')) return;
+            e.preventDefault();
+            // Obtenir la position de la souris au démarrage
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            document.onmouseup = closeDragElement;
+            document.onmousemove = elementDrag;
+        }
+
+        function elementDrag(e) {
+            e = e || window.event;
+            e.preventDefault();
+            // Calculer la nouvelle position
+            pos1 = pos3 - e.clientX;
+            pos2 = pos4 - e.clientY;
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            
+            // Définir la nouvelle position de l'élément (en tenant compte du transform: translate original)
+            // On désactive le translate et on utilise le top/left absolu pour éviter les sauts
+            elmnt.style.transform = 'none'; 
+            elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+            elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+        }
+
+        function closeDragElement() {
+            // Arrêter de bouger quand le bouton de la souris est relâché
+            document.onmouseup = null;
+            document.onmousemove = null;
+        }
+    }
+
     // --- INJECTION DES ELEMENTS GLOBAUX ---
     function injectGlobalUI() {
-        // Bouton Top Bar très visible
+        // Bouton Top Bar décalé sur la droite
         if (!document.getElementById('gu-topbar-designer-btn')) {
             const btn = document.createElement('div');
             btn.id = 'gu-topbar-designer-btn';
-            btn.innerHTML = '🛠️ Designer de Ville';
+            
+            // Utilisation d'une icône du jeu pour s'intégrer au style
+            btn.innerHTML = `<div style="display:flex; align-items:center; gap: 5px;">
+                                <div style="width: 25px; height: 25px; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -450px 0; background-size: 250px 75px;"></div>
+                                <span>Designer</span>
+                             </div>`;
             btn.title = "Ouvrir le Designer de Ville";
-            btn.style = `position: fixed; top: 4px; left: 50%; transform: translateX(-50%); 
-                         background: linear-gradient(180deg, #FFD700, #B8860B); border: 2px solid #333; 
-                         color: #000; font-weight: bold; font-family: Arial, sans-serif; font-size: 14px;
-                         padding: 6px 15px; border-radius: 4px; cursor: pointer; z-index: 99999; 
-                         box-shadow: 0 4px 6px rgba(0,0,0,0.6); text-shadow: 1px 1px 0px rgba(255,255,255,0.5);`;
+            // Positionné à 80% (à droite, après l'or) et stylé comme les boutons de Grepolis
+            btn.style = `position: fixed; top: 2px; left: 80%; transform: translateX(-50%); 
+                         background: url(https://gpit.innogamescdn.com/images/game/layout/bg_button.png) repeat-x; 
+                         border: 1px solid #c79a49; color: #ffcc00; font-weight: bold; font-family: Arial, sans-serif; font-size: 11px;
+                         padding: 2px 10px; border-radius: 3px; cursor: pointer; z-index: 5000; 
+                         box-shadow: inset 0px 1px 0px #ffe599, 0px 1px 3px rgba(0,0,0,0.5); text-shadow: 1px 1px 1px #000;`;
+            
+            // Effet de survol (hover)
+            btn.onmouseover = () => btn.style.background = 'url(https://gpit.innogamescdn.com/images/game/layout/bg_button_hover.png) repeat-x';
+            btn.onmouseout = () => btn.style.background = 'url(https://gpit.innogamescdn.com/images/game/layout/bg_button.png) repeat-x';
+            
             btn.onclick = () => GU_Build.openDesigner();
             document.body.appendChild(btn);
         }
 
-        // Fenêtre Modale Géante
+        // Fenêtre Modale Géante (Maintenant déplaçable)
         if (!document.getElementById('gu-designer-modal')) {
             const modal = document.createElement('div');
             modal.id = 'gu-designer-modal';
             modal.style = `display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
                            width: 1100px; background: #1a1408; border: 3px solid #8B6914; border-radius: 8px; 
-                           z-index: 100000; box-shadow: 0 0 30px rgba(0,0,0,0.9); padding: 20px; color: #F5DEB3;`;
+                           z-index: 100000; box-shadow: 0 0 30px rgba(0,0,0,0.9); color: #F5DEB3;`; // Padding retiré pour gérer le header
+            
+            // Séparation du header pour le drag
             modal.innerHTML = `
-                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #8B6914; padding-bottom: 10px; margin-bottom: 20px;">
+                <div id="gu-designer-header" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(to bottom, #3b2a18, #1a1408); border-bottom: 2px solid #8B6914; padding: 10px 20px; cursor: move; border-top-left-radius: 6px; border-top-right-radius: 6px;">
                     <h2 style="margin: 0; font-family: Cinzel, serif; color: #FFD700; font-size: 22px;">🏛️ Gestionnaire de Ville (Designer)</h2>
-                    <div style="cursor: pointer; font-weight: bold; color: #E53935; font-size: 18px;" onclick="GU_Build.closeDesigner()">❌ Fermer</div>
+                    <div style="cursor: pointer; font-weight: bold; color: #E53935; font-size: 16px; padding: 5px;" onclick="GU_Build.closeDesigner()">❌ Fermer</div>
                 </div>
                 
-                <div id="gu-modal-grid-content" style="background: rgba(0,0,0,0.4); padding: 25px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.2);">
-                    <!-- Rempli dynamiquement -->
-                </div>
+                <div style="padding: 20px;">
+                    <div id="gu-modal-grid-content" style="background: rgba(0,0,0,0.4); padding: 25px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.2);">
+                        <!-- Rempli dynamiquement -->
+                    </div>
 
-                <div style="display: flex; gap: 15px; margin-top: 25px; justify-content: center;">
-                    <button onclick="GU_Build.importTown()" style="padding: 12px 25px; font-size: 14px; background: #7B1FA2; color: white; border: 1px solid #4A148C; border-radius: 4px; cursor: pointer; font-weight: bold;">📥 Importer la ville actuelle</button>
-                    <button onclick="GU_Build.applyTemplate()" style="padding: 12px 25px; font-size: 14px; background: #1976D2; color: white; border: 1px solid #0D47A1; border-radius: 4px; cursor: pointer; font-weight: bold;">▶ Appliquer à la file d'attente</button>
-                    <button onclick="GU_Build.saveTemplate()" style="padding: 12px 25px; font-size: 14px; background: #388E3C; color: white; border: 1px solid #1B5E20; border-radius: 4px; cursor: pointer; font-weight: bold;">💾 Sauvegarder Template</button>
-                    <button onclick="GU_Build.resetDesigner()" style="padding: 12px 25px; font-size: 14px; background: #F57C00; color: white; border: 1px solid #E65100; border-radius: 4px; cursor: pointer; font-weight: bold;">🔄 Réinitialiser</button>
+                    <div style="display: flex; gap: 15px; margin-top: 25px; justify-content: center;">
+                        <button onclick="GU_Build.importTown()" style="padding: 12px 25px; font-size: 14px; background: #7B1FA2; color: white; border: 1px solid #4A148C; border-radius: 4px; cursor: pointer; font-weight: bold;">📥 Importer la ville actuelle</button>
+                        <button onclick="GU_Build.applyTemplate()" style="padding: 12px 25px; font-size: 14px; background: #1976D2; color: white; border: 1px solid #0D47A1; border-radius: 4px; cursor: pointer; font-weight: bold;">▶ Appliquer à la file d'attente</button>
+                        <button onclick="GU_Build.saveTemplate()" style="padding: 12px 25px; font-size: 14px; background: #388E3C; color: white; border: 1px solid #1B5E20; border-radius: 4px; cursor: pointer; font-weight: bold;">💾 Sauvegarder Template</button>
+                        <button onclick="GU_Build.resetDesigner()" style="padding: 12px 25px; font-size: 14px; background: #F57C00; color: white; border: 1px solid #E65100; border-radius: 4px; cursor: pointer; font-weight: bold;">🔄 Réinitialiser</button>
+                    </div>
                 </div>
             `;
             document.body.appendChild(modal);
+            
+            // Activer le drag & drop
+            makeDraggable(modal, document.getElementById("gu-designer-header"));
         }
     }
 
@@ -202,7 +261,12 @@
             remove: (idx) => removeFromQueue(idx),
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val),
             openDesigner: () => {
-                document.getElementById('gu-designer-modal').style.display = 'block';
+                const modal = document.getElementById('gu-designer-modal');
+                // Réinitialiser la position au centre à l'ouverture
+                modal.style.top = '50%';
+                modal.style.left = '50%';
+                modal.style.transform = 'translate(-50%, -50%)';
+                modal.style.display = 'block';
                 renderDesignerModalGrid();
             },
             closeDesigner: () => {
@@ -214,7 +278,7 @@
             resetDesigner: () => resetDesignerGrid()
         };
 
-        log('BUILD', 'Module initialisé avec Modal Géante et icônes corrigées', 'info');
+        log('BUILD', 'Module initialisé avec Modal Déplaçable, Bouton décalé et icônes corrigées', 'info');
     };
 
     module.isActive = function() { return buildData.enabled || buildData.gratisEnabled; };
@@ -386,7 +450,8 @@
         }
         buildData.queues[tid] = newQueue; saveData(); refreshSenateQueue(); updateStats(); updateQueueDisplay();
         log('BUILD', `Template appliqué ! ${newQueue.length} constructions planifiées.`, 'success');
-        GU_Build.closeDesigner(); 
+        // Optionnel: fermer après application, commenté pour l'instant pour plus de praticité
+        // GU_Build.closeDesigner(); 
     }
 
     function toggleBuild(enabled) {
