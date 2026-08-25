@@ -3,8 +3,8 @@
     const log = module.log;
     const GM_getValue = module.GM_getValue;
     const GM_setValue = module.GM_setValue;
+    const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
 
-    // --- DONNÉES ET CONFIGURATION ---
     const NAMES = { 
         main: 'Sénat', lumber: 'Scierie', stoner: 'Carrière', ironer: 'Mine d\'argent', 
         storage: 'Entrepôt', farm: 'Ferme', barracks: 'Caserne', docks: 'Port', 
@@ -13,29 +13,33 @@
         tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
     };
 
-    // Ordre exact du screenshot classique
-    const CLASSIC_BUILDINGS = ['main', 'lumber', 'farm', 'stoner', 'ironer', 'storage', 'barracks', 'docks', 'academy', 'temple', 'market', 'wall', 'hide'];
+    const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Coordonnées natives InnoGames 100% exactes (sans l'obélisque, vrai Oracle)
+    // Sprites codés en dur avec les bonnes coordonnées (Zéro obélisque, vrai Oracle, Remparts/Comptoir ok)
     const SPRITES = { 
-        academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
-        hide: [200, 0], ironer: [250, 0], wall: [300, 0], theater: [350, 0], 
-        lumber: [400, 0], main: [450, 0], 
-        market: [0, 50], oracle: [100, 50], statue: [150, 50], 
-        stoner: [200, 50], storage: [250, 50], temple: [300, 50], thermal: [350, 50], 
-        library: [400, 50], lighthouse: [450, 50], 
-        trade_office: [0, 100], tower: [50, 100] 
+        main: [450, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
+        storage: [250, 50], farm: [150, 0], barracks: [50, 0], docks: [100, 0], 
+        wall: [300, 0], academy: [0, 0], temple: [300, 50], market: [0, 50], 
+        hide: [200, 0], 
+        theater: [350, 50], thermal: [400, 50], library: [300, 0], lighthouse: [350, 0], 
+        tower: [50, 100], statue: [150, 50], oracle: [100, 50], trade_office: [0, 100] 
     };
 
     const FR_TO_ID = { 
-        'senat': 'main', 'sénat': 'main', 'scierie': 'lumber', 'ferme': 'farm', 
-        'carriere': 'stoner', 'carrière': 'stoner', 'entrepot': 'storage', 'entrepôt': 'storage',
-        'mine': 'ironer', "mine d'argent": 'ironer', 'caserne': 'barracks', 'temple': 'temple', 
-        'marche': 'market', 'marché': 'market', 'port': 'docks', 'academie': 'academy', 'académie': 'academy',
-        'remparts': 'wall', 'muraille': 'wall', 'grotte': 'hide', 'thermes': 'thermal', 
-        'bibliotheque': 'library', 'bibliothèque': 'library', 'phare': 'lighthouse', 'tour': 'tower', 
+        'senat': 'main', 'sénat': 'main',
+        'scierie': 'lumber', 'ferme': 'farm', 
+        'carriere': 'stoner', 'carrière': 'stoner',
+        'entrepot': 'storage', 'entrepôt': 'storage',
+        'mine': 'ironer', "mine d'argent": 'ironer',
+        'caserne': 'barracks', 'temple': 'temple', 
+        'marche': 'market', 'marché': 'market',
+        'port': 'docks', 'academie': 'academy', 'académie': 'academy',
+        'remparts': 'wall', 'muraille': 'wall',
+        'grotte': 'hide', 'thermes': 'thermal', 
+        'bibliotheque': 'library', 'bibliothèque': 'library',
+        'phare': 'lighthouse', 'tour': 'tower', 
         'statue': 'statue', 'oracle': 'oracle', 'comptoir': 'trade_office', 
         'theatre': 'theater', 'théâtre': 'theater'
     };
@@ -53,26 +57,6 @@
     let senateWatcherInterval = null;
     let gratisInterval = null;
 
-    // --- INJECTION CSS PROPRE ---
-    function injectStyles() {
-        if (document.getElementById('gu-build-styles')) return;
-        const style = document.createElement('style');
-        style.id = 'gu-build-styles';
-        style.textContent = `
-            .gu-designer-wrapper { background: #fdf1d4; border: 1px solid #8e6633; padding: 15px; border-radius: 2px; box-shadow: inset 0 0 10px rgba(0,0,0,0.1); margin-top: 10px; }
-            .gu-bld-row { display: flex; justify-content: center; gap: 4px; }
-            .gu-bld-divider { width: 90%; height: 1px; background: rgba(0,0,0,0.3); margin: 15px auto; }
-            .gu-bld-specials { display: flex; justify-content: center; align-items: center; gap: 30px; }
-            .gu-bld-box { position: relative; width: 50px; height: 50px; border: 1px solid #111; box-shadow: 1px 1px 3px rgba(0,0,0,0.5); cursor: pointer; background-image: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png); background-repeat: no-repeat; background-size: 500px 150px; }
-            .gu-bld-box:hover { border-color: #D4AF37 !important; }
-            .gu-bld-inp { position: absolute; bottom: 2px; right: 2px; width: 24px; height: 14px; background: rgba(0,0,0,0.8); border: 1px solid #777; color: #fff; font-size: 10px; font-weight: bold; text-align: center; padding: 0; outline: none; border-radius: 1px; }
-            .gu-bld-inp::-webkit-outer-spin-button, .gu-bld-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-            .gu-bld-inp[type=number] { -moz-appearance: textfield; }
-        `;
-        document.head.appendChild(style);
-    }
-
-    // --- RENDER DU MODULE ---
     module.render = function(container) {
         container.innerHTML = `
             <div class="main-control inactive" id="build-control">
@@ -102,17 +86,27 @@
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
+                    <div style="padding: 12px; background: rgba(0,0,0,0.2); border-radius: 6px; font-size: 11px; color: #BDB76B;">
+                        <strong>ℹ️ Fonctionnement:</strong><br>
+                        • Clique automatiquement sur le bouton "Gratis" toutes les 2.5 secondes<br>
+                        • Termine instantanément les constructions de moins de 5 minutes
+                    </div>
                 </div>
             </div>
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>🎨</span> Gestionnaire de Ville (Designer)</div>
+                    <div class="section-title"><span>🎨</span> Designer de Template</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
-                    <div id="designer-container">
-                        <!-- Généré dynamiquement -->
+                    <div style="margin-bottom: 10px; font-size: 11px; color: #F5DEB3; display: flex; justify-content: space-between; align-items: center;">
+                        <span>Configuration (1 spécial max par côté)</span>
+                        <span id="building-points-summary" style="color: #FFD700; font-weight: bold;">Niveaux : 0</span>
+                    </div>
+                    
+                    <div id="designer-container" style="background: rgba(28,22,12,0.85); padding: 12px; border-radius: 6px; border: 2px solid #8B6914; display: flex; flex-direction: column; gap: 12px; max-height: 520px; overflow-y: auto;">
+                        <!-- Grille générée -->
                     </div>
 
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
@@ -128,21 +122,52 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>📊</span> Statistiques & Options</div>
+                    <div class="section-title"><span>📊</span> Statistiques</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
-                    <div class="stats-grid" style="margin-bottom: 10px;">
-                        <div class="stat-box"><span class="stat-value" id="build-stat-built">0</span><span class="stat-label">Construits</span></div>
-                        <div class="stat-box"><span class="stat-value" id="build-stat-queued">0</span><span class="stat-label">En attente</span></div>
-                        <div class="stat-box"><span class="stat-value" id="build-stat-gratis">0</span><span class="stat-label">Gratis</span></div>
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <span class="stat-value" id="build-stat-built">0</span>
+                            <span class="stat-label">Construits</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-value" id="build-stat-queued">0</span>
+                            <span class="stat-label">En attente</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-value" id="build-stat-gratis">0</span>
+                            <span class="stat-label">Gratis utilisés</span>
+                        </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="bot-section">
+                <div class="section-header">
+                    <div class="section-title"><span>⏱️</span> Prochain Check</div>
+                    <span class="section-toggle">▼</span>
+                </div>
+                <div class="section-content">
+                    <div class="timer-container">
+                        <div class="timer-label">Temps restant</div>
+                        <div class="timer-value" id="build-timer">--:--</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bot-section">
+                <div class="section-header">
+                    <div class="section-title"><span>⚙️</span> Options</div>
+                    <span class="section-toggle">▼</span>
+                </div>
+                <div class="section-content">
                     <div class="option-group">
-                        <span class="option-label">Intervalle de check</span>
+                        <span class="option-label">Intervalle de verification</span>
                         <select class="option-select" id="build-interval">
-                            <option value="2">2 min</option>
-                            <option value="5">5 min</option>
-                            <option value="10">10 min</option>
+                            <option value="2">2 minutes</option>
+                            <option value="5">5 minutes</option>
+                            <option value="10">10 minutes</option>
                         </select>
                     </div>
                 </div>
@@ -154,14 +179,15 @@
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
-                    <div id="build-queue-display" style="min-height: 60px; display: flex; flex-wrap: wrap; gap: 6px;"></div>
+                    <div id="build-queue-display" style="min-height: 60px; display: flex; flex-wrap: wrap; gap: 6px;">
+                        <div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Sénat pour voir la file</div>
+                    </div>
                 </div>
             </div>
         `;
     };
 
     module.init = function() {
-        injectStyles();
         loadData();
         initializeDesignerTemplate();
 
@@ -175,10 +201,14 @@
         
         document.getElementById('toggle-build').onchange = (e) => toggleBuild(e.target.checked);
         document.getElementById('toggle-gratis').onchange = (e) => toggleGratis(e.target.checked);
+        
         document.getElementById('build-interval').onchange = (e) => {
             buildData.settings.interval = parseInt(e.target.value);
             saveData();
-            if (buildData.enabled) buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
+            log('BUILD', 'Intervalle: ' + e.target.value + ' min', 'info');
+            if (buildData.enabled) {
+                buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
+            }
         };
 
         document.getElementById('btn-import-town').onclick = () => importTownLevelsToDesigner();
@@ -206,13 +236,19 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec l\'interface classique propre', 'info');
+        log('BUILD', 'Module initialisé avec injection d\'images en dur (100% fiable)', 'info');
     };
 
-    module.isActive = function() { return buildData.enabled || buildData.gratisEnabled; };
-    module.onActivate = function() { renderDesignerGrid(); updateStats(); updateQueueDisplay(); };
+    module.isActive = function() {
+        return buildData.enabled || buildData.gratisEnabled;
+    };
 
-    // --- LOGIQUE DESIGNER ---
+    module.onActivate = function(container) {
+        renderDesignerGrid();
+        updateStats();
+        updateQueueDisplay();
+    };
+
     function initializeDesignerTemplate() {
         if (!buildData.designerTemplate || Object.keys(buildData.designerTemplate).length === 0) {
             buildData.designerTemplate = {};
@@ -223,17 +259,24 @@
     function importTownLevelsToDesigner(silent = false) {
         try {
             const town = uw.ITowns.getCurrentTown();
-            if (!town) return;
+            if (!town) {
+                if (!silent) log('BUILD', 'Aucune ville active détectée pour importer les niveaux.', 'warning');
+                return;
+            }
             const buildingList = town.buildingList ? town.buildingList() : {};
             
-            for (const bid of Object.keys(NAMES)) {
+            for (const bid of [...CLASSIC_BUILDINGS, ...LEFT_SPECIALS, ...RIGHT_SPECIALS]) {
                 const currentObj = buildingList[bid];
-                buildData.designerTemplate[bid] = currentObj ? (currentObj.level || currentObj.akt_level || 0) : 0;
+                const lvl = currentObj ? (currentObj.level || currentObj.akt_level || 0) : 0;
+                buildData.designerTemplate[bid] = lvl;
             }
+            
             saveData();
             renderDesignerGrid();
             if (!silent) log('BUILD', 'Niveaux actuels importés dans le designer !', 'success');
-        } catch (e) {}
+        } catch (e) {
+            console.error('[GU Build] Erreur import niveaux ville:', e);
+        }
     }
 
     function renderDesignerGrid() {
@@ -242,48 +285,68 @@
 
         let totalLevels = 0;
 
-        const createBox = (bid) => {
+        const renderItems = (bids) => bids.map(bid => {
             const sp = SPRITES[bid] || [0, 0];
-            const level = buildData.designerTemplate[bid] || 0;
+            const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
             totalLevels += level;
             
             const isSpecial = LEFT_SPECIALS.includes(bid) || RIGHT_SPECIALS.includes(bid);
-            const borderCol = isSpecial && level > 0 ? '#4CAF50' : '#111';
+            const borderCol = isSpecial && level > 0 ? '#4CAF50' : '#8B6914';
 
+            // Injection DURE du style avec l'image pour éviter le bug des classes
             return `
-                <div class="gu-bld-box" style="background-position: -${sp[0]}px -${sp[1]}px; border-color: ${borderCol};" title="${NAMES[bid]}">
-                    <input type="number" class="gu-bld-inp" min="0" max="50" value="${level}" onchange="GU_Build.updateDesigner('${bid}', this.value)" />
+                <div style="position: relative; width: 50px; height: 50px; border: 2px solid ${borderCol}; border-radius: 4px; box-shadow: 1px 1px 4px rgba(0,0,0,0.8); overflow: hidden; background: url('https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png') no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px;" title="${NAMES[bid]}">
+                    <input type="number" min="0" max="50" value="${level}" 
+                        onchange="GU_Build.updateDesigner('${bid}', this.value)"
+                        style="position: absolute; bottom: 0; right: 0; width: 26px; height: 14px; background: rgba(0,0,0,0.85); border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; font-weight: bold; border-radius: 2px; padding: 0; box-sizing: border-box;" />
                 </div>
             `;
-        };
+        }).join('');
 
         container.innerHTML = `
-            <div class="gu-designer-wrapper">
-                <div class="gu-bld-row">
-                    ${CLASSIC_BUILDINGS.map(createBox).join('')}
+            <div style="background: rgba(0,0,0,0.25); padding: 8px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
+                <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; text-align: center;">🏛️ Bâtiments Classiques</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
+                    ${renderItems(CLASSIC_BUILDINGS)}
                 </div>
-                <div class="gu-bld-divider"></div>
-                <div class="gu-bld-specials">
-                    <div class="gu-bld-row" style="margin:0;">
-                        ${LEFT_SPECIALS.map(createBox).join('')}
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+                <div style="background: rgba(0,0,0,0.25); padding: 8px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
+                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; text-align: center;">⭐ Spéciaux Gauche (1 Max)</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
+                        ${renderItems(LEFT_SPECIALS)}
                     </div>
-                    <div style="font-size: 11px; font-weight: bold; color: #0044ff; font-family: Arial, sans-serif;">
-                        Niveaux : ${totalLevels}
-                    </div>
-                    <div class="gu-bld-row" style="margin:0;">
-                        ${RIGHT_SPECIALS.map(createBox).join('')}
+                </div>
+
+                <div style="background: rgba(0,0,0,0.25); padding: 8px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
+                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; text-align: center;">⭐ Spéciaux Droite (1 Max)</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
+                        ${renderItems(RIGHT_SPECIALS)}
                     </div>
                 </div>
             </div>
         `;
+
+        const summaryEl = document.getElementById('building-points-summary');
+        if (summaryEl) summaryEl.textContent = `Niveaux : ${totalLevels}`;
     }
 
     function updateDesignerLevel(bid, val) {
         let num = parseInt(val) || 0;
-        if (num < 0) num = 0; if (num > 50) num = 50;
+        if (num < 0) num = 0;
+        if (num > 50) num = 50;
         
-        if (LEFT_SPECIALS.includes(bid) && num > 0) LEFT_SPECIALS.forEach(s => { if (s !== bid) buildData.designerTemplate[s] = 0; });
-        if (RIGHT_SPECIALS.includes(bid) && num > 0) RIGHT_SPECIALS.forEach(s => { if (s !== bid) buildData.designerTemplate[s] = 0; });
+        if (LEFT_SPECIALS.includes(bid) && num > 0) {
+            LEFT_SPECIALS.forEach(s => {
+                if (s !== bid) buildData.designerTemplate[s] = 0;
+            });
+        }
+        if (RIGHT_SPECIALS.includes(bid) && num > 0) {
+            RIGHT_SPECIALS.forEach(s => {
+                if (s !== bid) buildData.designerTemplate[s] = 0;
+            });
+        }
         
         applyPrerequisites(bid, num);
         saveData();
@@ -292,70 +355,174 @@
 
     function applyPrerequisites(bid, targetLevel) {
         buildData.designerTemplate[bid] = targetLevel;
+
         if (targetLevel <= 0) return;
 
-        if (['thermal', 'library', 'lighthouse', 'tower'].includes(bid)) {
+        if (['thermal', 'library', 'lighthouse', 'tower', 'oracle', 'statue', 'trade_office'].includes(bid) && targetLevel > 0) {
             if ((buildData.designerTemplate['main'] || 0) < 24) buildData.designerTemplate['main'] = 24;
             if ((buildData.designerTemplate['storage'] || 0) < 22) buildData.designerTemplate['storage'] = 22;
         }
-        if (bid === 'thermal' && (buildData.designerTemplate['farm'] || 0) < 35) buildData.designerTemplate['farm'] = 35;
-        if (bid === 'library' && (buildData.designerTemplate['academy'] || 0) < 30) buildData.designerTemplate['academy'] = 30;
-        if (bid === 'lighthouse' && (buildData.designerTemplate['docks'] || 0) < 20) buildData.designerTemplate['docks'] = 20;
-        if (bid === 'tower' && (buildData.designerTemplate['wall'] || 0) < 15) buildData.designerTemplate['wall'] = 15;
+
+        if (bid === 'thermal' && targetLevel > 0) {
+            if ((buildData.designerTemplate['farm'] || 0) < 35) buildData.designerTemplate['farm'] = 35;
+        }
+        if (bid === 'library' && targetLevel > 0) {
+            if ((buildData.designerTemplate['academy'] || 0) < 30) buildData.designerTemplate['academy'] = 30;
+        }
+        if (bid === 'lighthouse' && targetLevel > 0) {
+            if ((buildData.designerTemplate['docks'] || 0) < 20) buildData.designerTemplate['docks'] = 20;
+        }
+        if (bid === 'tower' && targetLevel > 0) {
+            if ((buildData.designerTemplate['wall'] || 0) < 15) buildData.designerTemplate['wall'] = 15;
+        }
+        if (bid === 'oracle' && targetLevel > 0) {
+            if ((buildData.designerTemplate['temple'] || 0) < 12) buildData.designerTemplate['temple'] = 12;
+        }
+
+        if (bid === 'academy' && targetLevel >= 34) {
+            if ((buildData.designerTemplate['main'] || 0) < 24) buildData.designerTemplate['main'] = 24;
+            if ((buildData.designerTemplate['storage'] || 0) < 22) buildData.designerTemplate['storage'] = 22;
+            if ((buildData.designerTemplate['farm'] || 0) < 22) buildData.designerTemplate['farm'] = 22;
+            if ((buildData.designerTemplate['lumber'] || 0) < 24) buildData.designerTemplate['lumber'] = 24;
+            if ((buildData.designerTemplate['stoner'] || 0) < 24) buildData.designerTemplate['stoner'] = 24;
+            if ((buildData.designerTemplate['ironer'] || 0) < 24) buildData.designerTemplate['ironer'] = 24;
+        }
+        if (bid === 'academy' && targetLevel >= 1) {
+            if ((buildData.designerTemplate['main'] || 0) < 8) buildData.designerTemplate['main'] = 8;
+            if ((buildData.designerTemplate['storage'] || 0) < 10) buildData.designerTemplate['storage'] = 10;
+        }
+        if (bid === 'barracks' && targetLevel >= 1) {
+            if ((buildData.designerTemplate['main'] || 0) < 4) buildData.designerTemplate['main'] = 4;
+        }
+        if (bid === 'docks' && targetLevel >= 1) {
+            if ((buildData.designerTemplate['main'] || 0) < 6) buildData.designerTemplate['main'] = 6;
+            if ((buildData.designerTemplate['storage'] || 0) < 5) buildData.designerTemplate['storage'] = 5;
+            if ((buildData.designerTemplate['lumber'] || 0) < 5) buildData.designerTemplate['lumber'] = 5;
+        }
+        if (bid === 'temple' && targetLevel >= 1) {
+            if ((buildData.designerTemplate['main'] || 0) < 5) buildData.designerTemplate['main'] = 5;
+            if ((buildData.designerTemplate['storage'] || 0) < 8) buildData.designerTemplate['storage'] = 8;
+        }
+        if (bid === 'market' && targetLevel >= 1) {
+            if ((buildData.designerTemplate['main'] || 0) < 3) buildData.designerTemplate['main'] = 3;
+            if ((buildData.designerTemplate['storage'] || 0) < 10) buildData.designerTemplate['storage'] = 10;
+            if ((buildData.designerTemplate['stoner'] || 0) < 5) buildData.designerTemplate['stoner'] = 5;
+        }
+        if (bid === 'wall' && targetLevel >= 1) {
+            if ((buildData.designerTemplate['main'] || 0) < 3) buildData.designerTemplate['main'] = 3;
+            if ((buildData.designerTemplate['ironer'] || 0) < 1) buildData.designerTemplate['ironer'] = 1;
+        }
     }
 
-    function saveDesignerTemplate() { saveData(); log('BUILD', 'Template sauvegardé.', 'success'); }
-    function resetDesignerGrid() {
-        for (let key in buildData.designerTemplate) buildData.designerTemplate[key] = 0;
-        saveData(); renderDesignerGrid(); log('BUILD', 'Niveaux réinitialisés.', 'info');
+    function saveDesignerTemplate() {
+        saveData();
+        log('BUILD', 'Template du Designer sauvegardé avec succès.', 'success');
     }
 
-    // --- LOGIQUE BOT ---
     function generateQueueFromDesigner() {
         const tid = uw.Game.townId;
         const town = uw.ITowns.getTown(tid);
-        if (!town) return;
+        if (!town) {
+            log('BUILD', 'Ville introuvable pour appliquer le template.', 'error');
+            return;
+        }
 
         const newQueue = [];
         const buildingList = town.buildingList ? town.buildingList() : {};
 
         for (const [bid, targetLvl] of Object.entries(buildData.designerTemplate)) {
             if (targetLvl <= 0) continue;
-            const currentLvl = buildingList[bid] ? (buildingList[bid].level || buildingList[bid].akt_level || 0) : 0;
-            for (let l = currentLvl + 1; l <= targetLvl; l++) newQueue.push({ buildingId: bid, level: l });
+            const currentObj = buildingList[bid];
+            const currentLvl = currentObj ? (currentObj.level || currentObj.akt_level || 0) : 0;
+            
+            for (let l = currentLvl + 1; l <= targetLvl; l++) {
+                newQueue.push({ buildingId: bid, level: l });
+            }
         }
 
         buildData.queues[tid] = newQueue;
-        saveData(); refreshSenateQueue(); updateStats(); updateQueueDisplay();
-        log('BUILD', `Template appliqué ! ${newQueue.length} constructions planifiées.`, 'success');
+        saveData();
+        refreshSenateQueue();
+        updateStats();
+        updateQueueDisplay();
+        log('BUILD', `Template appliqué ! ${newQueue.length} constructions planifiées en tenant compte des prérequis.`, 'success');
+    }
+
+    function resetDesignerGrid() {
+        for (let key in buildData.designerTemplate) {
+            buildData.designerTemplate[key] = 0;
+        }
+        saveData();
+        renderDesignerGrid();
+        log('BUILD', 'Niveaux du Designer réinitialisés à 0.', 'info');
+    }
+
+    function openRequiredWindows() {
+        try {
+            if (uw.GPWindowMgr) {
+                if (typeof uw.GPWindowMgr.HasOpenWindowsOfType === 'function' && !uw.GPWindowMgr.HasOpenWindowsOfType(uw.GPWindowMgr.TYPE_SENATE)) {
+                    uw.GPWindowMgr.Create(uw.GPWindowMgr.TYPE_SENATE);
+                }
+                if (typeof uw.GPWindowMgr.HasOpenWindowsOfType === 'function' && !uw.GPWindowMgr.HasOpenWindowsOfType(uw.GPWindowMgr.TYPE_ACADEMY)) {
+                    uw.GPWindowMgr.Create(uw.GPWindowMgr.TYPE_ACADEMY);
+                }
+            }
+        } catch (e) {
+            console.error('[GU Build] Erreur ouverture fenêtres:', e);
+        }
     }
 
     function toggleBuild(enabled) {
         buildData.enabled = enabled;
-        document.getElementById('build-status').textContent = enabled ? 'Actif' : 'En attente';
+        const ctrl = document.getElementById('build-control');
+        const status = document.getElementById('build-status');
+        
         if (enabled) {
-            log('BUILD', 'Bot démarré', 'success');
+            ctrl.classList.remove('inactive');
+            status.textContent = 'Actif';
+            log('BUILD', 'Bot de construction démarré', 'success');
+            openRequiredWindows();
             buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
             processAllQueues();
         } else {
-            log('BUILD', 'Bot arrêté', 'info');
+            ctrl.classList.add('inactive');
+            status.textContent = 'En attente';
+            log('BUILD', 'Bot de construction arrêté', 'info');
         }
+        
         saveData();
+        if (window.GrepolisUltimate) {
+            window.GrepolisUltimate.updateButtonState();
+        }
     }
 
     function toggleGratis(enabled) {
         buildData.gratisEnabled = enabled;
+        const ctrl = document.getElementById('gratis-control');
         const status = document.getElementById('gratis-status');
+        
         if (enabled) {
-            status.textContent = 'Actif'; status.style.color = '#81C784';
-            gratisInterval = setInterval(checkGratis, 2500);
+            ctrl.classList.remove('inactive');
+            status.textContent = 'Actif';
+            status.style.color = '#81C784';
             log('BUILD', 'Auto Gratis activé', 'success');
-        } else {
-            status.textContent = 'Inactif'; status.style.color = '#E57373';
             if (gratisInterval) clearInterval(gratisInterval);
+            gratisInterval = setInterval(checkGratis, 2500);
+        } else {
+            ctrl.classList.add('inactive');
+            status.textContent = 'Inactif';
+            status.style.color = '#E57373';
             log('BUILD', 'Auto Gratis désactivé', 'info');
+            if (gratisInterval) {
+                clearInterval(gratisInterval);
+                gratisInterval = null;
+            }
         }
+        
         saveData();
+        if (window.GrepolisUltimate) {
+            window.GrepolisUltimate.updateButtonState();
+        }
     }
 
     function checkGratis() {
@@ -364,36 +531,85 @@
             if (gratisButton.length > 0) {
                 gratisButton.click();
                 const town = uw.ITowns.getCurrentTown();
-                for (let model of town.buildingOrders().models) {
+                if (!town) return;
+                const buildingOrders = town.buildingOrders();
+                if (!buildingOrders || !buildingOrders.models) return;
+                for (let model of buildingOrders.models) {
                     if (model.attributes && model.attributes.building_time < 300) {
-                        callGratis(town.id, model.id); return;
+                        callGratis(town.id, model.id);
+                        return;
                     }
                 }
             }
-        } catch (e) {}
+        } catch (e) {
+            log('BUILD', `Erreur Auto Gratis: ${e.message}`, 'error');
+        }
     }
 
     function callGratis(townId, orderId) {
-        uw.gpAjax.ajaxPost('frontend_bridge', 'execute', { model_url: `BuildingOrder/${orderId}`, action_name: 'buyInstant', arguments: { order_id: orderId }, town_id: townId }, null, {
-            success: () => { buildData.stats.gratisClaimed++; saveData(); updateStats(); }
-        });
+        try {
+            const data = {
+                model_url: `BuildingOrder/${orderId}`,
+                action_name: 'buyInstant',
+                arguments: { order_id: orderId },
+                town_id: townId
+            };
+            const townName = uw.ITowns.getTown(townId)?.getName() || `Ville ${townId}`;
+            uw.gpAjax.ajaxPost('frontend_bridge', 'execute', data, null, {
+                success: function() {
+                    buildData.stats.gratisClaimed++;
+                    saveData();
+                    updateStats();
+                    log('BUILD', `${townName}: Gratis utilisé (Order ${orderId})`, 'success');
+                },
+                error: function(error) {
+                    log('BUILD', `${townName}: Erreur Gratis: ${error}`, 'error');
+                }
+            });
+        } catch (e) {
+            log('BUILD', `Erreur callGratis: ${e.message}`, 'error');
+        }
     }
 
     async function processAllQueues() {
-        for (const tid in buildData.queues) await processTownQueue(tid);
+        for (const tid in buildData.queues) {
+            if (buildData.queues.hasOwnProperty(tid)) {
+                await processTownQueue(tid);
+            }
+        }
     }
 
     async function processTownQueue(tid) {
         const q = buildData.queues[tid] || [];
         if (q.length === 0) return;
+
         const town = uw.ITowns.getTown(tid);
-        if (!town || town.buildingOrders().length >= (uw.GameDataPremium.isAdvisorActivated('curator') ? 7 : 2)) return;
+        if (!town) return;
+
+        const max = uw.GameDataPremium.isAdvisorActivated('curator') ? 7 : 2;
+        const currentOrders = town.buildingOrders().length;
+
+        if (currentOrders >= max) return;
 
         const item = q[0];
-        uw.gpAjax.ajaxPost('frontend_bridge', 'execute', { model_url: 'BuildingOrder', action_name: 'buildUp', arguments: { building_id: item.buildingId }, town_id: tid }, false, () => {
-            log('BUILD', `${town.getName()}: ${NAMES[item.buildingId]} niv.${item.level}`, 'success');
-            buildData.queues[tid].shift(); buildData.stats.built++; saveData();
-            updateStats(); updateQueueDisplay(); refreshSenateQueue();
+        const name = NAMES[item.buildingId] || item.buildingId;
+
+        uw.gpAjax.ajaxPost('frontend_bridge', 'execute', {
+            model_url: 'BuildingOrder', action_name: 'buildUp',
+            arguments: { building_id: item.buildingId }, town_id: tid
+        }, false, () => {
+            log('BUILD', `${town.getName()}: ${name} niv.${item.level}`, 'success');
+            buildData.queues[tid].shift();
+            buildData.stats.built++;
+            saveData();
+            updateStats();
+            updateQueueDisplay();
+            
+            if (tid == uw.Game.townId) {
+                refreshSenateQueue();
+                uw.$('.ab-btn').remove();
+            }
+
             setTimeout(() => processTownQueue(tid), 1000);
         }, () => {});
     }
@@ -402,86 +618,195 @@
         const tid = uw.Game.townId;
         if (!buildData.queues[tid]) buildData.queues[tid] = [];
         buildData.queues[tid].push({ buildingId: bid, level: lvl });
-        saveData(); refreshSenateQueue(); updateStats(); updateQueueDisplay(); uw.$('.ab-btn').remove();
+        saveData();
+        log('BUILD', `+ ${NAMES[bid]} niv.${lvl}`, 'success');
+        refreshSenateQueue();
+        updateStats();
+        updateQueueDisplay();
+        uw.$('.ab-btn').remove();
     }
 
     function removeFromQueue(idx) {
         const tid = uw.Game.townId;
         if (buildData.queues[tid]) {
             buildData.queues[tid].splice(idx, 1);
-            saveData(); refreshSenateQueue(); updateStats(); updateQueueDisplay(); uw.$('.ab-btn').remove();
+            saveData();
+            refreshSenateQueue();
+            updateStats();
+            updateQueueDisplay();
+            uw.$('.ab-btn').remove();
         }
     }
 
     function startSenateWatcher() {
-        senateWatcherInterval = setInterval(() => { injectSenateQueue(); addBuildButtons(); }, 1000);
+        if (senateWatcherInterval) clearInterval(senateWatcherInterval);
+        senateWatcherInterval = setInterval(() => {
+            injectSenateQueue();
+            addBuildButtons();
+        }, 1000);
     }
 
     function injectSenateQueue() {
-        if (uw.$('#autobuild-senate-queue').length) { refreshSenateQueue(); return; }
+        if (uw.$('#autobuild-senate-queue').length) {
+            refreshSenateQueue();
+            return;
+        }
+
         const $bt = uw.$('#building_tasks_main');
         if (!$bt.length) return;
-        $bt.after(`<div id="autobuild-senate-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px;padding:10px;"><div class="queue-items" style="display:flex;flex-wrap:wrap;gap:4px;"></div></div>`);
+
+        const queue = buildData.queues[uw.Game.townId] || [];
+        const $parent = $bt.closest('.gpwindow_content');
+        if ($parent.length && $parent.css('overflow') !== 'auto') {
+            $parent.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
+        }
+        
+        $bt.after(`<div id="autobuild-senate-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px;padding:10px;flex-shrink:0;">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
+                <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Build</span>
+                <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${queue.length}</span>
+            </div>
+            <div class="queue-items" style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;"></div>
+        </div>`);
         refreshSenateQueue();
     }
 
     function refreshSenateQueue() {
         const queue = buildData.queues[uw.Game.townId] || [];
         const $items = uw.$('#autobuild-senate-queue .queue-items');
+        const $count = uw.$('#autobuild-senate-queue').find('span:last');
+        
+        if ($count.length) $count.text(queue.length);
+        
         if ($items.length) {
-            $items.html(queue.length === 0 ? '<div style="color:#8B8B83;padding:10px;">File vide</div>' : queue.map((it, i) => {
-                const sp = SPRITES[it.buildingId] || [0, 0];
-                return `<div style="width:40px;height:40px;position:relative;cursor:pointer;border:1px solid #8B6914;border-radius:3px;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;" title="${NAMES[it.buildingId]} niv.${it.level}">
-                    <span style="position:absolute;bottom:1px;right:1px;background:#000;color:#fff;font-size:9px;padding:0 3px;">${it.level}</span>
-                    <div onclick="event.stopPropagation();GU_Build.remove(${i})" style="position:absolute;top:-5px;right:-5px;background:#E53935;color:#fff;width:14px;height:14px;text-align:center;line-height:14px;font-size:10px;border-radius:50%;display:none;">x</div>
-                </div>`;
-            }).join(''));
-            $items.find('div[title]').hover(function(){ uw.$(this).find('div:last').show(); }, function(){ uw.$(this).find('div:last').hide(); });
+            if (queue.length === 0) {
+                $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;">File vide - Utilisez les boutons "+ FILE"</div>');
+            } else {
+                $items.html(queue.map((it, i) => {
+                    const sp = SPRITES[it.buildingId] || [0, 0];
+                    return `<div style="width:50px;height:50px;position:relative;display:inline-block;margin:3px;cursor:pointer;border:2px solid #8B6914;border-radius:4px;box-sizing:border-box;background:url('https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png') no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;" title="${NAMES[it.buildingId]} niv.${it.level}">
+                        <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
+                        <div onclick="event.stopPropagation();GU_Build.remove(${i})" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;display:none;">x</div>
+                    </div>`;
+                }).join(''));
+                $items.find('div[title]').hover(function(){ uw.$(this).find('div:last').show(); }, function(){ uw.$(this).find('div:last').hide(); });
+            }
         }
     }
 
     function addBuildButtons() {
-        uw.$('.gpwindow_content:visible .building').each(function() {
+        const $w = uw.$('.gpwindow_content:visible');
+        if (!$w.length) return;
+
+        $w.find('.building').each(function() {
             const $b = uw.$(this);
             if ($b.find('.ab-btn').length) return;
+
             const $name = $b.find('.name').first();
-            const bid = Object.keys(NAMES).find(k => NAMES[k] === $name.text().trim()) || ($b.attr('class').match(/building_([a-z_]+)/) || [])[1];
+            let nameStr = $name.text().trim().toLowerCase();
+            nameStr = nameStr.replace(/\s+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            
+            let bid = FR_TO_ID[nameStr];
+
+            if (!bid) {
+                const nameNorm = nameStr.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                for (const [k, v] of Object.entries(FR_TO_ID)) {
+                    const kNorm = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                    if (nameNorm.includes(kNorm) || kNorm.includes(nameNorm)) { 
+                        bid = v; 
+                        break; 
+                    }
+                }
+            }
+            
+            if (!bid) {
+                const buildingClasses = $b.attr('class') || '';
+                const classMatch = buildingClasses.match(/building_([a-z_]+)/);
+                if (classMatch && classMatch[1]) {
+                    bid = classMatch[1];
+                }
+            }
+            
             if (!bid) return;
-            const nLvl = (parseInt($b.find('.level').first().text()) || 0) + uw.ITowns.getTown(uw.Game.townId).buildingOrders().filter(o => o.getBuildingId() === bid).length + (buildData.queues[uw.Game.townId] || []).filter(it => it.buildingId === bid).length + 1;
-            $name.append(`<span class="ab-btn" onclick="event.stopPropagation();GU_Build.add('${bid}',${nLvl})" style="background:#D4AF37;color:#000;font-size:9px;padding:2px;margin-left:4px;cursor:pointer;border-radius:2px;">+ FILE</span>`);
+
+            const currentLvl = parseInt($b.find('.level').first().text()) || 0;
+            const town = uw.ITowns.getTown(uw.Game.townId);
+            const inRealQueue = town.buildingOrders().filter(o => o.getBuildingId() === bid).length;
+            const inAutoQueue = (buildData.queues[uw.Game.townId] || []).filter(it => it.buildingId === bid).length;
+            const nextLvl = currentLvl + inRealQueue + inAutoQueue + 1;
+
+            $name.append(`<span class="ab-btn" onclick="event.stopPropagation();GU_Build.add('${bid}',${nextLvl})" style="background:linear-gradient(145deg,#D4AF37,#8B6914);border:1px solid #FFD700;color:#1a1408;font-size:8px;font-weight:bold;padding:2px 5px;margin-left:4px;cursor:pointer;border-radius:3px;">+ FILE</span>`);
         });
     }
 
     function updateQueueDisplay() {
         const container = document.getElementById('build-queue-display');
         if (!container) return;
+        
         const queue = buildData.queues[uw.Game.townId] || [];
-        container.innerHTML = queue.length === 0 ? '<div style="color: #8B8B83; font-style: italic; padding: 15px; width: 100%;">Ouvrez le Sénat pour remplir la file</div>' : queue.map((it) => {
-            const sp = SPRITES[it.buildingId] || [0, 0];
-            return `<div style="width:40px;height:40px;position:relative;border:1px solid #8B6914;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;">
-                <span style="position:absolute;bottom:1px;right:1px;background:#000;color:#fff;font-size:9px;padding:0 3px;">${it.level}</span>
-            </div>`;
-        }).join('');
+        if (queue.length === 0) {
+            container.innerHTML = '<div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Sénat pour voir la file</div>';
+        } else {
+            container.innerHTML = queue.map((it, i) => {
+                const sp = SPRITES[it.buildingId] || [0, 0];
+                return `<div style="width:50px;height:50px;position:relative;cursor:pointer;border:2px solid #8B6914;border-radius:4px;box-sizing:border-box;background:url('https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png') no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;" title="${NAMES[it.buildingId]} niv.${it.level}">
+                    <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
+                </div>`;
+            }).join('');
+        }
     }
 
     function startTimer() {
         setInterval(() => {
             const el = document.getElementById('build-timer');
             if (!el) return;
-            if (!buildData.enabled) return el.textContent = 'PAUSE';
+            
+            if (!buildData.enabled) {
+                el.textContent = 'PAUSE';
+                return;
+            }
+
             const diff = buildData.nextCheckTime - Date.now();
-            if (diff <= 0) { processAllQueues(); buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000; }
-            el.textContent = `${String(Math.max(0, Math.floor(diff / 60000))).padStart(2, '0')}:${String(Math.max(0, Math.floor((diff % 60000) / 1000))).padStart(2, '0')}`;
+            if (diff <= 0) {
+                processAllQueues();
+                buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
+            }
+            
+            const m = Math.max(0, Math.floor(diff / 60000)).toString().padStart(2, '0');
+            const s = Math.max(0, Math.floor((diff % 60000) / 1000)).toString().padStart(2, '0');
+            el.textContent = `${m}:${s}`;
         }, 1000);
     }
 
     function updateStats() {
-        if (document.getElementById('build-stat-built')) document.getElementById('build-stat-built').textContent = buildData.stats.built;
-        if (document.getElementById('build-stat-queued')) document.getElementById('build-stat-queued').textContent = Object.values(buildData.queues).reduce((a, q) => a + q.length, 0);
-        if (document.getElementById('build-stat-gratis')) document.getElementById('build-stat-gratis').textContent = buildData.stats.gratisClaimed;
+        const b = document.getElementById('build-stat-built');
+        const q = document.getElementById('build-stat-queued');
+        const g = document.getElementById('build-stat-gratis');
+        
+        if (b) b.textContent = buildData.stats.built;
+        if (q) q.textContent = Object.values(buildData.queues).reduce((a, queue) => a + queue.length, 0);
+        if (g) g.textContent = buildData.stats.gratisClaimed;
     }
 
-    function saveData() { GM_setValue('gu_build_data', JSON.stringify(buildData)); }
-    function loadData() { const s = GM_getValue('gu_build_data'); if (s) try { Object.assign(buildData, JSON.parse(s)); } catch(e) {} }
+    function saveData() {
+        GM_setValue('gu_build_data', JSON.stringify({
+            enabled: buildData.enabled,
+            gratisEnabled: buildData.gratisEnabled,
+            settings: buildData.settings,
+            stats: buildData.stats,
+            queues: buildData.queues,
+            designerTemplate: buildData.designerTemplate
+        }));
+    }
+
+    function loadData() {
+        const saved = GM_getValue('gu_build_data');
+        if (saved) {
+            try {
+                const d = JSON.parse(saved);
+                buildData = { ...buildData, ...d };
+            } catch(e) {}
+        }
+    }
 
 })(module);
