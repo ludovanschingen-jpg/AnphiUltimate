@@ -1,4 +1,4 @@
-// Builder revision 2026-08-25 — bâtiments actuels + prérequis stables + file académie sous la file native
+// Builder revision 2026-08-25 — File Auto Recherches 100% alignée sur le style du Sénat
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -61,7 +61,6 @@ function getBuildingData(bid){ return uw.GameData?.buildings?.[bid] || null; }
 function getBuildingName(bid){ return getBuildingData(bid)?.name || NAMES[bid] || bid; }
 function getBuildingMaxLevel(bid){ return Number(getBuildingData(bid)?.max_level ?? BUILDING_MAX_LEVELS[bid] ?? 30); }
 
-// Table de secours complète et prioritaire pour garantir des prérequis infaillibles
 const BUILDING_DEPENDENCY_FALLBACK = {
     main:[], lumber:[], stoner:[], ironer:[], farm:[], storage:[],
     market:[['main',3],['storage',5]],
@@ -82,10 +81,8 @@ const BUILDING_DEPENDENCY_FALLBACK = {
 };
 
 function getBuildingDependencies(bid){
-    // Priorité absolue à la table explicite pour une fiabilité totale indépendante des versions du jeu
     const explicit = BUILDING_DEPENDENCY_FALLBACK[bid];
     if(explicit && explicit.length > 0) return explicit;
-    
     const data=getBuildingData(bid);
     const raw = data?.dependencies || data?.building_dependencies || data?.requirements || data?.prerequisites;
     if(!raw) return [];
@@ -833,6 +830,7 @@ function injectAcademyQueue() {
     const tid = uw.Game.townId;
     const rQueue = (buildData.researchQueues && buildData.researchQueues[tid]) || [];
 
+    // Copie exacte du bloc structurel du Sénat ("File Auto Build") adapté pour les recherches
     $target.after(`<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;z-index:100;position:relative;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
             <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Recherches</span>
@@ -853,11 +851,12 @@ function refreshAcademyQueue() {
     
     if ($items.length) {
         if (rQueue.length === 0) {
-            $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;width:100%;">File de recherches vide - Utilisez les boutons "+ FILE" sur les recherches</div>');
+            $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;width:100%;">File vide - Utilisez les boutons "+ FILE" sur les recherches</div>');
         } else {
+            // Style de cellule identique au Sénat (boîte 50x50px avec bordure #8B6914)
             $items.html(rQueue.map((rid, i) => {
-                return `<div style="width:40px;height:40px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getResearchName(rid)}">
-                    <div class="research_icon research40x40 ${rid}" style="width:36px;height:36px;margin:1px auto;"></div>
+                return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getResearchName(rid)}">
+                    <div class="research_icon research40x40 ${rid}" style="width:40px;height:40px;margin:3px auto;"></div>
                     <div onclick="event.stopPropagation();GU_Build.removeResearch(${i})" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;display:none;">x</div>
                 </div>`;
             }).join(''));
@@ -997,7 +996,6 @@ function initResearchToggleHandlers(){
 }
 
 function initTemplateInputHandlers(){
-    // Écoute 'change' et 'blur' uniquement pour éviter d'interrompre la frappe dans les champs de niveau
     document.querySelectorAll('.tpl-level-input').forEach(inp=>{
         inp.addEventListener('change',()=>refreshTemplatePrerequisites(true));
         inp.addEventListener('blur',()=>refreshTemplatePrerequisites(true));
