@@ -17,17 +17,17 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Le dictionnaire PARFAIT et VERROUILLÉ : l'Oracle est bien la colonnade [50, 50] !
+    // Coordonnées rectifiées selon tes marquages violet et bleu (vrai Oracle et inversions corrigées)
     const SPRITES = { 
         academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
         hide: [200, 0], ironer: [250, 0], library: [300, 0], lighthouse: [350, 0], 
         lumber: [400, 0], main: [450, 0], 
         
-        market: [0, 50], oracle: [50, 50], statue: [150, 50], 
-        stoner: [200, 50], storage: [250, 50], trade_office: [300, 50], theater: [350, 50], 
+        market: [0, 50], oracle: [100, 50], statue: [150, 50], 
+        stoner: [200, 50], storage: [250, 50], trade_office: [450, 50], theater: [350, 50], 
         thermal: [400, 50], tower: [450, 50], 
         
-        wall: [0, 100], temple: [50, 100] 
+        wall: [50, 100], temple: [0, 100] 
     };
 
     const FR_TO_ID = { 
@@ -85,20 +85,19 @@
 
     // --- INJECTION DES ELEMENTS GLOBAUX ---
     function injectGlobalUI() {
-        // Bouton Top Bar très visible, décalé à droite
+        // Petite icône de marteau positionnée exactement dans ton cercle rouge
         if (!document.getElementById('gu-topbar-designer-btn')) {
             const btn = document.createElement('div');
             btn.id = 'gu-topbar-designer-btn';
-            btn.innerHTML = '🛠️ Designer';
             btn.title = "Ouvrir le Designer de Ville";
-            btn.style = `position: fixed; top: 5px; left: 75%; transform: translateX(-50%); 
-                         background: #FFD700; border: 2px solid #8B6914; color: #000; 
-                         font-weight: bold; font-family: Arial, sans-serif; font-size: 13px;
-                         padding: 4px 15px; border-radius: 4px; cursor: pointer; z-index: 5000; 
-                         box-shadow: 0 2px 4px rgba(0,0,0,0.6);`;
+            // Icône de marteau épurée, petite et discrète
+            btn.style = `position: fixed; top: 12px; left: 545px; width: 22px; height: 22px; 
+                         background: url('https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png') no-repeat -50px 0; 
+                         background-size: 220px 66px; cursor: pointer; z-index: 5000; 
+                         filter: drop-shadow(0px 1px 2px rgba(0,0,0,0.9));`;
             
-            btn.onmouseover = () => btn.style.background = '#FFA500';
-            btn.onmouseout = () => btn.style.background = '#FFD700';
+            btn.onmouseover = () => btn.style.transform = 'scale(1.1)';
+            btn.onmouseout = () => btn.style.transform = 'scale(1.0)';
             
             btn.onclick = () => GU_Build.openDesigner();
             document.body.appendChild(btn);
@@ -259,7 +258,7 @@
             resetDesigner: () => resetDesignerGrid()
         };
 
-        log('BUILD', 'Module initialisé (Dictionnaire Sprites 100% Correct)', 'info');
+        log('BUILD', 'Module initialisé avec icone marteau, vrai Oracle wiki et corrections', 'info');
     };
 
     module.isActive = function() { return buildData.enabled || buildData.gratisEnabled; };
@@ -561,7 +560,7 @@
             if (!el) return;
             if (!buildData.enabled) return el.textContent = 'PAUSE';
             const diff = buildData.nextCheckTime - Date.now();
-            if (diff <= 0) { processAllQueues(); buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000; }
+            if (diff <= 0) { processAllQueues(); buildData.nextCheckTime = Date.Now + buildData.settings.interval * 60000; }
             el.textContent = `${String(Math.max(0, Math.floor(diff / 60000))).padStart(2, '0')}:${String(Math.max(0, Math.floor((diff % 60000) / 1000))).padStart(2, '0')}`;
         }, 1000);
     }
