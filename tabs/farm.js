@@ -136,7 +136,7 @@
                         </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ Actions diversifiées au début, puis récolte sécurisée, puis délai aléatoire exact à la seconde près.
+                        ℹ️ Actions diversifiées garanties de se fermer, puis récolte sécurisée, puis délai aléatoire exact à la seconde près.
                     </div>
                 </div>
             </div>
@@ -183,7 +183,7 @@
         }
     }
 
-    // ─── INIT ─────────────────────────────────────────────────────────────────────
+    // ─── INIT ────────────────────────────────────────────────────────────────     
 
     module.init = function() {
         loadData();
@@ -228,7 +228,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé (options à deux colonnes & timer aléatoire à la seconde) initialisé', 'info');
+        log('FARM', 'Module humanisé (fermeture sécurisée des fenêtres) initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -287,16 +287,13 @@
 
     function getRandomIntervalMs() {
         const opt = DURATION_OPTIONS[farmData.settings.duration] || DURATION_OPTIONS[2];
-        const baseSec = opt.intervalSec; // 300s (5m), 600s (10m), ou 1200s (20m)
-        
-        // Ajout d'une variation aléatoire humaine allant de 0 à 7 minutes supplémentaires (en secondes exactes)
+        const baseSec = opt.intervalSec; 
         const extraSecMax = 7 * 60; 
         const randomSecs = Math.floor(Math.random() * extraSecMax) + baseSec;
-        
-        return randomSecs * 1000; // Conversion en millisecondes
+        return randomSecs * 1000;
     }
 
-    // ─── TÂCHES ALÉATOIRES AMÉLIORÉES ET DIVERSIFIÉES ─────────────────────────────
+    // ─── TÂCHES ALÉATOIRES AVEC FERMETURE GARANTIE (TRY...FINALLY) ───────────────
 
     async function performRandomHumanActions() {
         if (!farmData.enabled) return;
@@ -309,11 +306,14 @@
                     name: 'Messages',
                     type: uw.GPWindowMgr?.TYPE_MESSAGE || uw.GPWindowMgr?.TYPE_MAIL,
                     action: async (win) => {
-                        await new Promise(r => setTimeout(r, 800));
-                        const firstMsg = win.getEl().find('.message_list .message_row, .messages_list tr, .mail_list li, .list_messages tr').first();
-                        if (firstMsg.length) {
-                            firstMsg.click();
-                            await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1001) + 1000));
+                        await new Promise(r => setTimeout(r, 1000));
+                        const winEl = win.getEl ? win.getEl() : null;
+                        if (winEl) {
+                            const firstMsg = $(winEl).find('.message_list .message_row, .messages_list tr, .mail_list li, .list_messages tr, .ui_game_list_row').first();
+                            if (firstMsg.length) {
+                                firstMsg.click();
+                                await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1001) + 1000));
+                            }
                         }
                     }
                 },
@@ -321,11 +321,14 @@
                     name: 'Rapports',
                     type: uw.GPWindowMgr?.TYPE_REPORT,
                     action: async (win) => {
-                        await new Promise(r => setTimeout(r, 800));
-                        const firstReport = win.getEl().find('.report_list .report_row, .reports_list tr, .report_list li').first();
-                        if (firstReport.length) {
-                            firstReport.click();
-                            await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1001) + 1000));
+                        await new Promise(r => setTimeout(r, 1000));
+                        const winEl = win.getEl ? win.getEl() : null;
+                        if (winEl) {
+                            const firstReport = $(winEl).find('.report_list .report_row, .reports_list tr, .report_list li, .ui_game_list_row').first();
+                            if (firstReport.length) {
+                                firstReport.click();
+                                await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1001) + 1000));
+                            }
                         }
                     }
                 },
@@ -333,12 +336,15 @@
                     name: 'Forum Alliance',
                     type: uw.GPWindowMgr?.TYPE_ALLIANCE_FORUM || uw.GPWindowMgr?.TYPE_FORUM,
                     action: async (win) => {
-                        await new Promise(r => setTimeout(r, 800));
-                        const tabs = win.getEl().find('.forum_tabs a, .sub_tabs a, .forum_navigation li, .nui_tabs_container a');
-                        if (tabs.length) {
-                            const randomTab = tabs.eq(Math.floor(Math.random() * tabs.length));
-                            randomTab.click();
-                            await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1001) + 1000));
+                        await new Promise(r => setTimeout(r, 1000));
+                        const winEl = win.getEl ? win.getEl() : null;
+                        if (winEl) {
+                            const tabs = $(winEl).find('.forum_tabs a, .sub_tabs a, .forum_navigation li a, .nui_tabs_container a, .tabs_container a');
+                            if (tabs.length) {
+                                const randomTab = tabs.eq(Math.floor(Math.random() * tabs.length));
+                                randomTab.click();
+                                await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1001) + 1000));
+                            }
                         }
                     }
                 },
@@ -363,29 +369,42 @@
                 if (!farmData.enabled) break;
 
                 log('FARM', `Ouverture de l'onglet : [${task.name}]`, 'info');
-                
-                if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
-                    const winInstance = uw.GPWindowMgr.Create(task.type);
+                let winInstance = null;
 
-                    if (typeof task.action === 'function' && winInstance) {
-                        await task.action(winInstance);
+                try {
+                    if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
+                        winInstance = uw.GPWindowMgr.Create(task.type);
+
+                        if (typeof task.action === 'function' && winInstance) {
+                            await task.action(winInstance);
+                        }
+
+                        // Temps d'attente "humain" entre 2 et 4 secondes
+                        const waitTime = Math.floor(Math.random() * 2001) + 2000;
+                        await new Promise(r => setTimeout(r, waitTime));
+                    } else {
+                        await new Promise(r => setTimeout(r, 3000));
                     }
-
-                    const waitTime = Math.floor(Math.random() * 2001) + 2000;
-                    await new Promise(r => setTimeout(r, waitTime));
-
-                    if (!farmData.enabled) break;
-
+                } catch (innerErr) {
+                    console.error(`[FARM Action Error - ${task.name}]`, innerErr);
+                } finally {
+                    // BLOC FINALLY : Garanti de s'exécuter quoiqu'il arrive (fermeture propre)
                     log('FARM', `Fermeture de l'onglet : [${task.name}]`, 'info');
-                    if (winInstance && typeof winInstance.close === 'function') {
-                        winInstance.close();
-                    } else if (typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
-                        uw.GPWindowMgr.CloseAllOpenWindowsOfType(task.type);
+                    try {
+                        if (winInstance && typeof winInstance.close === 'function') {
+                            winInstance.close();
+                        }
+                    } catch (e) {}
+
+                    // Double sécurité : force la fermeture de toutes les fenêtres de ce type
+                    if (uw.GPWindowMgr && typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
+                        try {
+                            uw.GPWindowMgr.CloseAllOpenWindowsOfType(task.type);
+                        } catch (e) {}
                     }
-                } else {
-                    await new Promise(r => setTimeout(r, 3000));
                 }
 
+                // Pause naturelle entre les deux actions
                 await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 800));
             }
 
