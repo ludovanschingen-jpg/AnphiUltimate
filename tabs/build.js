@@ -25,43 +25,31 @@ const BUILDING_MAX_LEVELS = {
 };
 
 // Liste issue directement de Palette.tsx de l'autre script.
-const RESEARCH_KEY_PREFIX = '__research__';
+const RESEARCH_IDS = [
+    'slinger','archer','hoplite','town_guard','diplomacy','espionage','booty_bpv','booty',
+    'pottery','rider','architecture','instructor','bireme','building_crane','meteorology',
+    'chariot','attack_ship','conscription','shipwright','demolition_ship','catapult',
+    'cryptography','democracy','colonize_ship','small_transporter','plow','berth','trireme',
+    'phalanx','breach','mathematics','ram','cartography','take_over','take_over_old',
+    'stone_storm','temple_looting','divine_selection','combat_experience','strong_wine','set_sail'
+];
 
-// Ordre conforme au tableau du Wiki FR : 1 / 4 / 7 / 10 / 13 / 16 / 19 / 22 / 25 / 28 / 31 / 34.
-// Les identifiants sont ceux utilisés par l'autre script (GameData/GrepoAuto).
-const RESEARCH_LEVEL_GROUPS = {
-    1:  ['slinger','archer','town_guard'],
-    4:  ['hoplite','meteorology'],
-    7:  ['espionage','diplomacy','pottery'],
-    10: ['rider','architecture','instructor'],
-    13: ['bireme','building_crane','shipwright','colonize_ship'],
-    16: ['chariot','attack_ship','conscription'],
-    19: ['demolition_ship','catapult','cryptography','democracy'],
-    22: ['small_transporter','plow','berth'],
-    25: ['trireme','phalanx','breach','mathematics'],
-    28: ['ram','cartography','take_over','take_over_old'],
-    31: ['stone_storm','temple_looting','divine_selection'],
-    34: ['combat_experience','strong_wine','set_sail']
-};
-
-const RESEARCH_IDS = [...new Set(Object.values(RESEARCH_LEVEL_GROUPS).flat())];
 const RESEARCH_FALLBACK = {
-    slinger:{name:'Frondeur',academy:1}, archer:{name:'Archer',academy:1}, town_guard:{name:'Gardes de la cité',academy:1},
-    hoplite:{name:'Hoplite',academy:4}, meteorology:{name:'Météorologie',academy:4},
-    espionage:{name:'Espionnage',academy:7}, diplomacy:{name:'Loyauté des villageois',academy:7}, pottery:{name:'Céramique',academy:7},
-    rider:{name:'Cavalier',academy:10}, architecture:{name:'Architecture',academy:10}, instructor:{name:'Instructeur',academy:10},
-    bireme:{name:'Birème',academy:13}, building_crane:{name:'Grue',academy:13}, shipwright:{name:'Constructeur naval',academy:13}, colonize_ship:{name:'Navire de colonisation',academy:13},
-    chariot:{name:'Char',academy:16}, attack_ship:{name:'Bateau-feu',academy:16}, conscription:{name:'Conscription',academy:16},
-    demolition_ship:{name:'Brûlot',academy:19}, catapult:{name:'Catapulte',academy:19}, cryptography:{name:'Cryptographie',academy:19}, democracy:{name:'Démocratie',academy:19},
-    small_transporter:{name:'Navire de transport rapide',academy:22}, plow:{name:'Charrue',academy:22}, berth:{name:'Couchettes',academy:22},
-    trireme:{name:'Trière',academy:25}, phalanx:{name:'Phalange',academy:25}, breach:{name:'Percée',academy:25}, mathematics:{name:'Mathématiques',academy:25},
-    ram:{name:'Bélier',academy:28}, cartography:{name:'Cartographie',academy:28}, take_over:{name:'Conquête',academy:28}, take_over_old:{name:'Révolte',academy:28},
-    stone_storm:{name:'Grêle de pierres',academy:31}, temple_looting:{name:'Pillage de temple',academy:31}, divine_selection:{name:'Sélection divine',academy:31},
-    combat_experience:{name:'Expérience de combat',academy:34}, strong_wine:{name:'Vin puissant',academy:34}, set_sail:{name:'Mettre les voiles',academy:34},
-    // Variantes présentes dans l'autre script : conservées si GameData les expose.
-    booty_bpv:{name:'Butin',academy:7}, booty:{name:'Butin',academy:7}
+    slinger:{name:'Lanceur',academy:1}, archer:{name:'Archer',academy:1}, hoplite:{name:'Hoplite',academy:1},
+    town_guard:{name:'Garde de la ville',academy:1}, diplomacy:{name:'Diplomatie',academy:4}, meteorology:{name:'Météorologie',academy:4},
+    espionage:{name:'Espionnage',academy:7}, booty:{name:'Butin',academy:7}, booty_bpv:{name:'Butin',academy:7}, pottery:{name:'Céramique',academy:7},
+    rider:{name:'Cavalerie',academy:10}, architecture:{name:'Architecture',academy:10}, instructor:{name:'Instructeur',academy:10},
+    colonize_ship:{name:'Navire de colonisation',academy:13}, bireme:{name:'Birème',academy:13}, building_crane:{name:'Grue',academy:13},
+    shipwright:{name:'Charpentier de marine',academy:13}, chariot:{name:'Chars',academy:16}, attack_ship:{name:'Navire d\'attaque',academy:16},
+    conscription:{name:'Conscription',academy:16}, demolition_ship:{name:'Navire incendiaire',academy:16},
+    catapult:{name:'Catapulte',academy:19}, cryptography:{name:'Cryptographie',academy:19}, democracy:{name:'Démocratie',academy:19},
+    small_transporter:{name:'Transport rapide',academy:19}, plow:{name:'Charrue',academy:22}, berth:{name:'Couchage',academy:22},
+    trireme:{name:'Trière',academy:22}, phalanx:{name:'Phalange',academy:25}, breach:{name:'Percée',academy:25},
+    mathematics:{name:'Mathématiques',academy:25}, ram:{name:'Bélier',academy:25}, cartography:{name:'Cartographie',academy:28},
+    take_over:{name:'Conquête',academy:28}, take_over_old:{name:'Conquête',academy:28}, stone_storm:{name:'Grêle de pierres',academy:31},
+    temple_looting:{name:'Pillage du temple',academy:31}, divine_selection:{name:'Sélection divine',academy:31},
+    combat_experience:{name:'Expérience de combat',academy:34}, strong_wine:{name:'Vin corsé',academy:34}, set_sail:{name:'Mettre les voiles',academy:34}
 };
-
 
 function getBuildingData(bid){ return uw.GameData?.buildings?.[bid] || null; }
 function getBuildingName(bid){ return getBuildingData(bid)?.name || NAMES[bid] || bid; }
@@ -91,86 +79,80 @@ const BUILDING_DEPENDENCY_FALLBACK = {
 
 function normalizeBuildingDependencies(raw){
     if(!raw) return [];
+    const allowed=new Set([...NORMAL_BUILDINGS,...SPECIAL_LEFT,...SPECIAL_RIGHT]);
+    const out=[];
+
+    // Format Grepolis possible : [["main",24],["farm",35], ...]
     if(Array.isArray(raw)){
-        const rows=[];
         for(const item of raw){
             if(Array.isArray(item) && item.length>=2){
-                const id=String(item[0]), lvl=Number(item[1]);
-                if(Number.isFinite(lvl) && lvl>0) rows.push([id,lvl]);
+                const id=String(item[0]);
+                const lvl=Number(item[1]);
+                if(allowed.has(id)&&Number.isFinite(lvl)&&lvl>0) out.push([id,lvl]);
             }else if(item && typeof item==='object'){
-                const id=item.building||item.id||item.type||item.building_id;
-                const lvl=item.level??item.required_level??item.value;
-                const n=Number(lvl);
-                if(id && Number.isFinite(n) && n>0) rows.push([String(id),n]);
+                const id=item.building_id ?? item.building ?? item.id ?? item.name;
+                const lvl=item.level ?? item.required_level ?? item.requirement_level ?? item.value;
+                if(id!=null){
+                    const sid=String(id);
+                    const n=Number(lvl);
+                    if(allowed.has(sid)&&Number.isFinite(n)&&n>0) out.push([sid,n]);
+                }
             }
         }
-        return rows.filter(([id])=>NORMAL_BUILDINGS.includes(id)||SPECIAL_LEFT.includes(id)||SPECIAL_RIGHT.includes(id));
     }
-    if(typeof raw==='object'){
-        const nested=raw.buildings||raw.building||raw.dependencies||raw.requirements||raw.prerequisites;
-        if(nested && nested!==raw){
-            const n=normalizeBuildingDependencies(nested);
-            if(n.length) return n;
+
+    // Format Grepolis possible : { main: 24, farm: 35, ... }
+    if(!out.length && typeof raw==='object'){
+        for(const [id,val] of Object.entries(raw)){
+            const sid=String(id);
+            if(!allowed.has(sid)) continue;
+            const lvl=typeof val==='object' && val!==null
+                ? Number(val.level ?? val.required_level ?? val.requirement_level ?? val.value)
+                : Number(val);
+            if(Number.isFinite(lvl)&&lvl>0) out.push([sid,lvl]);
         }
-        return Object.entries(raw)
-            .map(([id,lvl])=>[String(id),Number(typeof lvl==='object' ? (lvl.level??lvl.required_level??lvl.value) : lvl)])
-            .filter(([id,lvl])=>(NORMAL_BUILDINGS.includes(id)||SPECIAL_LEFT.includes(id)||SPECIAL_RIGHT.includes(id))&&Number.isFinite(lvl)&&lvl>0);
     }
-    return [];
+
+    // Some versions wrap the dependencies in an extra property.
+    if(!out.length && typeof raw==='object'){
+        for(const key of ['buildings','building','dependencies','requirements','prerequisites']){
+            if(raw[key]){
+                const nested=normalizeBuildingDependencies(raw[key]);
+                if(nested.length) return nested;
+            }
+        }
+    }
+
+    return [...new Map(out.map(([id,lvl])=>[id,lvl])).entries()];
 }
 
 function getBuildingDependencies(bid){
+    // For construction prerequisites we intentionally prefer the explicit
+    // Grepolis FR wiki data. This avoids version-dependent GameData shapes.
+    if(Object.prototype.hasOwnProperty.call(BUILDING_DEPENDENCY_FALLBACK,bid)){
+        return BUILDING_DEPENDENCY_FALLBACK[bid].map(([id,lvl])=>[id,lvl]);
+    }
+
     const data=getBuildingData(bid);
     const candidates=[
         data?.dependencies,
         data?.building_dependencies,
         data?.requirements,
         data?.prerequisites,
-        data?.build_dependencies,
-        data?.buildings?.dependencies,
-        data?.construction?.dependencies
+        data?.build_dependencies
     ];
     for(const raw of candidates){
         const deps=normalizeBuildingDependencies(raw);
         if(deps.length) return deps;
     }
-    return BUILDING_DEPENDENCY_FALLBACK[bid] || [];
+    return [];
 }
 function getResearchData(rid){ return uw.GameData?.researches?.[rid] || null; }
 function getResearchName(rid){ return getResearchData(rid)?.name || RESEARCH_FALLBACK[rid]?.name || rid; }
-function getResearchAcademyLevel(rid){
-    const data=getResearchData(rid);
-    const candidates=[
-        data?.building_dependencies?.academy,
-        data?.academy_level,
-        data?.academy,
-        data?.building_requirements?.academy,
-        RESEARCH_FALLBACK[rid]?.academy
-    ];
-    for(const v of candidates){ const n=Number(v); if(Number.isFinite(n)&&n>0) return n; }
-    return 0;
-}
+function getResearchAcademyLevel(rid){ return Number(getResearchData(rid)?.building_dependencies?.academy ?? RESEARCH_FALLBACK[rid]?.academy ?? 0); }
 function getResearchIdsAvailable(){
-    const native=Object.keys(uw.GameData?.researches||{});
-    const available=RESEARCH_IDS.filter(rid=>native.length===0 || native.includes(rid));
-    const extras=native.filter(rid=>!RESEARCH_IDS.includes(rid)).filter(rid=>getResearchData(rid));
-    return [...new Set([...available,...extras])];
-}
-function getResearchSortKey(rid){
-    const level=getResearchAcademyLevel(rid);
-    const groups=Object.entries(RESEARCH_LEVEL_GROUPS);
-    for(let i=0;i<groups.length;i++){
-        const ids=groups[i][1];
-        const idx=ids.indexOf(rid);
-        if(idx!==-1) return [Number(groups[i][0]),idx,0];
-    }
-    return [level||999,999,1];
-}
-function getResearchIdsSorted(){
-    return getResearchIdsAvailable().sort((a,b)=>{
-        const ka=getResearchSortKey(a), kb=getResearchSortKey(b);
-        return ka[0]-kb[0] || ka[2]-kb[2] || ka[1]-kb[1] || getResearchName(a).localeCompare(getResearchName(b),'fr');
-    });
+    const available=RESEARCH_IDS.filter(rid=>!uw.GameData?.researches || !!uw.GameData.researches[rid]);
+    return available.length ? available : Object.keys(RESEARCH_FALLBACK);
 }
 
 // Ancien mapping utilisé seulement pour reconnaître les intitulés du Sénat.
@@ -188,7 +170,7 @@ const REQUIREMENTS = {};
 let buildData = {
     enabled: false,
     gratisEnabled: false,
-    settings: { interval: 2, webhook: '', humanizer: true, humanizerMinDelay: 2200, humanizerMaxDelay: 5200, humanizerTownMinDelay: 3000, humanizerTownMaxDelay: 6000 },
+    settings: { interval: 2, webhook: '' },
     stats: { built: 0, gratisClaimed: 0 },
     queues: {},
     researchQueues: {},
@@ -267,7 +249,7 @@ module.render = function(container) {
                 <div style="padding:8px;margin-bottom:12px;background:rgba(0,0,0,0.2);border-radius:6px;border:1px solid rgba(212,175,55,0.2);">
                     <div style="font-size:10px;color:#D4AF37;text-align:center;margin-bottom:8px;font-family:Cinzel,serif;">Recherches — Académie</div>
                     <div id="tpl-research-grid" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-height:230px;overflow-y:auto;">
-                        ${getResearchIdsSorted().map(renderResearchCell).join('')}
+                        ${getResearchIdsAvailable().map(renderResearchCell).join('')}
                     </div>
                 </div>
 
@@ -356,16 +338,6 @@ module.render = function(container) {
                         <option value="10">10 minutes</option>
                     </select>
                 </div>
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;">
-                    <div>
-                        <div style="font-size:11px;color:#D4AF37;">Humaniser les actions</div>
-                        <div style="font-size:9px;color:#8B8B83;max-width:280px;">Traite les villes une par une avec des délais variables avant chaque action et entre les villes.</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="toggle-humanizer">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
             </div>
         </div>
 
@@ -414,14 +386,11 @@ module.init = function() {
     document.getElementById('toggle-build').checked = buildData.enabled;
     document.getElementById('toggle-gratis').checked = buildData.gratisEnabled;
     document.getElementById('build-interval').value = buildData.settings.interval;
-    const humanizerToggle=document.getElementById('toggle-humanizer');
-    if(humanizerToggle) humanizerToggle.checked = buildData.settings.humanizer !== false;
     updateStats();
     updateQueueDisplay();
     
     document.getElementById('toggle-build').onchange = (e) => toggleBuild(e.target.checked);
     document.getElementById('toggle-gratis').onchange = (e) => toggleGratis(e.target.checked);
-    if(humanizerToggle) humanizerToggle.onchange = (e) => { buildData.settings.humanizer=e.target.checked; saveData(); log('BUILD', e.target.checked ? 'Humaniser activé' : 'Humaniser désactivé', 'info'); };
     document.getElementById('build-interval').onchange = (e) => {
         buildData.settings.interval = parseInt(e.target.value);
         saveData();
@@ -621,103 +590,51 @@ function callGratis(townId, orderId) {
     }
 }
 
-let processingAllQueues = false;
-let processingTownId = null;
-
-function randomDelay(minMs,maxMs){
-    const a=Math.max(0,Number(minMs)||0), b=Math.max(a,Number(maxMs)||a);
-    return Math.round(a + Math.random()*(b-a));
-}
-function sleep(ms){ return new Promise(resolve=>setTimeout(resolve,Math.max(0,ms|0))); }
-function humanActionDelay(){
-    return buildData.settings.humanizer===false ? 250 : randomDelay(buildData.settings.humanizerMinDelay||2200,buildData.settings.humanizerMaxDelay||5200);
-}
-function humanTownDelay(){
-    return buildData.settings.humanizer===false ? 700 : randomDelay(buildData.settings.humanizerTownMinDelay||3000,buildData.settings.humanizerTownMaxDelay||6000);
-}
-
-function getQueuedTownIds(){
-    const towns=uw.ITowns?.getTowns?.()||{};
-    const ids=Object.values(towns).map(t=>String(t.id)).filter(tid=>buildData.queues[tid]?.length || buildData.researchQueues?.[tid]?.length);
-    return ids.sort((a,b)=>Number(a)-Number(b));
-}
-
-async function switchToTownHumanized(tid){
-    if(String(uw.Game?.townId)===String(tid)) return true;
-    try{
-        if(uw.HelperTown?.switchToTown){
-            await uw.HelperTown.switchToTown(tid);
-            await sleep(humanTownDelay());
-            return String(uw.Game?.townId)===String(tid);
-        }
-        const town=uw.ITowns.getTown(tid);
-        if(town && uw.ITowns.setCurrentTown){
-            uw.ITowns.setCurrentTown(tid);
-            await sleep(humanTownDelay());
-            return String(uw.Game?.townId)===String(tid);
-        }
-    }catch(e){ log('BUILD',`Impossible de passer a la ville ${tid}: ${e.message}`,'error'); }
-    return false;
-}
-
-function buildUpPromise(tid,bid){
-    return new Promise(resolve=>{
-        let settled=false;
-        const done=(ok)=>{ if(settled)return; settled=true; resolve(ok); };
-        try{
-            uw.gpAjax.ajaxPost('frontend_bridge','execute',{
-                model_url:'BuildingOrder', action_name:'buildUp', arguments:{building_id:bid}, town_id:tid
-            },false,()=>done(true),()=>done(false));
-        }catch(e){ done(false); }
-    });
-}
-
-async function processAllQueues(){
-    if(processingAllQueues || !buildData.enabled) return;
-    processingAllQueues=true;
-    try{
-        const townIds=getQueuedTownIds();
-        for(const tid of townIds){
-            if(!buildData.enabled) break;
+async function processAllQueues() {
+    for (const tid in buildData.queues) {
+        if (buildData.queues.hasOwnProperty(tid)) {
             await processTownQueue(tid);
-            await processTownResearchQueue(tid);
-            if(buildData.enabled && tid!==townIds[townIds.length-1]) await sleep(humanTownDelay());
         }
-    }finally{ processingAllQueues=false; processingTownId=null; }
+    }
 }
 
-async function processTownQueue(tid){
-    if(!buildData.enabled) return;
-    const q=buildData.queues[tid]||[];
-    if(!q.length) return;
-    processingTownId=String(tid);
-    const town=uw.ITowns.getTown(tid); if(!town)return;
-    if(!(await switchToTownHumanized(tid))) return;
-    injectSenateQueue();
-    refreshSenateQueue();
+async function processTownQueue(tid) {
+    const q = buildData.queues[tid] || [];
+    if (q.length === 0) return;
 
-    const max=uw.GameDataPremium?.isAdvisorActivated?.('curator') ? 7 : 2;
-    while(buildData.enabled && q.length){
-        const currentTown=uw.ITowns.getTown(tid); if(!currentTown)break;
-        let currentOrders=[];
-        try{ currentOrders=currentTown.buildingOrders?.()||[]; }catch(e){ currentOrders=[]; }
-        if(currentOrders.length>=max){
-            log('BUILD',`${currentTown.getName?.()||tid}: file de construction pleine (${currentOrders.length}/${max}), passage a la ville suivante`,'info');
-            break;
-        }
-        const item=q[0];
-        await sleep(humanActionDelay());
-        const ok=await buildUpPromise(tid,item.buildingId);
-        if(!ok){
-            log('BUILD',`${currentTown.getName?.()||tid}: impossible de lancer ${getBuildingName(item.buildingId)} niv.${item.level} (ressources/prerequis/file), pause pour cette ville`,'info');
-            break;
-        }
-        q.shift();
+    const town = uw.ITowns.getTown(tid);
+    if (!town) return;
+
+    const max = uw.GameDataPremium.isAdvisorActivated('curator') ? 7 : 2;
+    const currentOrders = town.buildingOrders().length;
+
+    if (currentOrders >= max) return;
+
+    const item = q[0];
+    const name = NAMES[item.buildingId] || item.buildingId;
+
+    uw.gpAjax.ajaxPost('frontend_bridge', 'execute', {
+        model_url: 'BuildingOrder', action_name: 'buildUp',
+        arguments: { building_id: item.buildingId }, town_id: tid
+    }, false, () => {
+        log('BUILD', `${town.getName()}: ${name} niv.${item.level}`, 'success');
+        buildData.queues[tid].shift();
         buildData.stats.built++;
-        saveData(); updateStats(); refreshSenateQueue(); updateQueueDisplay();
-        log('BUILD',`${currentTown.getName?.()||tid}: ${getBuildingName(item.buildingId)} niv.${item.level}`,'success');
-    }
-    saveData(); updateStats(); refreshSenateQueue(); updateQueueDisplay();
+        saveData();
+        updateStats();
+        updateQueueDisplay();
+        
+        if (tid == uw.Game.townId) {
+            refreshSenateQueue();
+            uw.$('.ab-btn').remove();
+        }
+
+        // Continue immediatement a remplir la file (jusqu'a epuisement des emplacements/ressources)
+        setTimeout(() => processTownQueue(tid), 1000);
+    }, () => {
+        // Echec (ressources insuffisantes, prerequis manquant, etc.) : on laisse l'item en file,
+        // le prochain cycle de remplissage (fillInterval / timer) retentera automatiquement.
+    });
 }
 
 function addToQueue(bid, lvl) {
@@ -1061,30 +978,38 @@ function queueResearch(tid,rid){if(!buildData.researchQueues[tid])buildData.rese
 function processAllResearchQueues(){for(const tid in (buildData.researchQueues||{}))if(buildData.researchQueues.hasOwnProperty(tid))processTownResearchQueue(tid);}
 async function processTownResearchQueue(tid){
     const queue=(buildData.researchQueues&&buildData.researchQueues[tid])||[];
-    if(!queue.length || !buildData.enabled)return;
+    if(!queue.length)return;
     const town=uw.ITowns.getTown(tid);if(!town)return;
-    if(!(await switchToTownHumanized(tid))) return;
     const researched=getTownResearchState(tid);
     while(queue.length&&researched[queue[0]]===true)queue.shift();
     if(!queue.length){saveData();return;}
     const rid=queue[0],academy=(town.getBuildings&&town.getBuildings().getBuildings())?.academy||0;
     if(academy<getResearchAcademyLevel(rid))return;
     try{
-        await sleep(humanActionDelay());
+        if(String(uw.Game?.townId)!==String(tid)&&uw.HelperTown?.switchToTown) await uw.HelperTown.switchToTown(tid);
         if(uw.AcademyWindowFactory?.openAcademyWindow){
             uw.AcademyWindowFactory.openAcademyWindow();
-            await sleep(randomDelay(buildData.settings.humanizer===false?400:900,buildData.settings.humanizer===false?800:1800));
+            await new Promise(resolve=>setTimeout(resolve,600));
         }
-        const selectors=[`div[data-research_id*="${rid}"]`,`[data-research_id="${rid}"]`,`.research_icon.research.${rid}`,`.research_technology.${rid}`,`.research.${rid}`];
+        const selectors=[
+            `div[data-research_id*="${rid}"]`,
+            `[data-research_id="${rid}"]`,
+            `.research_icon.research.${rid}`,
+            `.research_technology.${rid}`,
+            `.research.${rid}`
+        ];
         let $candidate=null;
-        for(const sel of selectors){const $el=uw.$(sel).filter(':visible');if($el&&$el.length){$candidate=$el.first();break;}}
+        for(const sel of selectors){
+            const $el=uw.$(sel).filter(':visible');
+            if($el&&$el.length){$candidate=$el.first();break;}
+        }
         if(!$candidate||!$candidate.length)return;
         const $button=$candidate.closest('button,.btn,.research_technology,.research').first();
         ($button.length?$button:$candidate).click();
-        await sleep(buildData.settings.humanizer===false?700:randomDelay(1200,2500));
-        const after=getTownResearchState(tid);
-        if(after[rid]===true){queue.shift();saveData();updateStats();log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(rid)} lancee`,'success');}
-    }catch(e){log('BUILD',`${town.getName?.()||tid}: impossible de lancer ${getResearchName(rid)}: ${e.message}`,'error');}
+        setTimeout(()=>{
+            if(getTownResearchState(tid)[rid]===true){queue.shift();saveData();updateStats();}
+        },1400);
+    }catch(e){log('BUILD',`${town.getName()}: impossible de lancer ${getResearchName(rid)}: ${e.message}`,'error');}
 }
 
 function applyTemplateToTown(templateName){
@@ -1098,7 +1023,7 @@ function applyTemplateToTown(templateName){
     const requested=Object.keys(template).filter(k=>k.startsWith(RESEARCH_KEY_PREFIX)).map(k=>k.slice(RESEARCH_KEY_PREFIX.length)).filter(rid=>getResearchData(rid)||RESEARCH_FALLBACK[rid]);
     const researchState=getTownResearchState(tid);requested.forEach(rid=>{if(researchState[rid]!==true){ensureLevel('academy',getResearchAcademyLevel(rid));queueResearch(tid,rid);}});
     if(newItems.length){if(!buildData.queues[tid])buildData.queues[tid]=[];buildData.queues[tid].push(...newItems);}
-    saveData(); injectSenateQueue(); refreshSenateQueue(); updateStats(); updateQueueDisplay();
+    saveData();refreshSenateQueue();updateStats();updateQueueDisplay();
     const parts=[];if(newItems.length)parts.push(`${newItems.length} construction(s)`);if(requested.length)parts.push(`${requested.length} recherche(s)`);
     if(!parts.length){log('BUILD',hadConflict?"Template: rien ajoute (conflit d'emplacement special)":'Template: rien a ajouter, niveaux/recherches deja atteints','info');return;}
     log('BUILD',`Template "${templateName}" applique: ${parts.join(' + ')} (prerequis inclus)`,'success');
@@ -1160,8 +1085,7 @@ function loadData() {
             buildData = { ...buildData, ...d };
             if (!buildData.templates) buildData.templates = {};
             if (!buildData.researchQueues) buildData.researchQueues = {};
-            buildData.settings = { interval: 2, webhook: '', humanizer: true, humanizerMinDelay: 2200, humanizerMaxDelay: 5200, humanizerTownMinDelay: 3000, humanizerTownMaxDelay: 6000, ...(buildData.settings||{}) };
-            Object.values(buildData.templates).forEach(t=>Object.keys(t||{}).forEach(k=>{if((RESEARCH_FALLBACK[k]||getResearchData(k))&&!k.startsWith(RESEARCH_KEY_PREFIX)){t[RESEARCH_KEY_PREFIX+k]=t[k];delete t[k];}}));
+            Object.values(buildData.templates).forEach(t=>Object.keys(t||{}).forEach(k=>{if(RESEARCHES[k]&&!k.startsWith(RESEARCH_KEY_PREFIX)){t[RESEARCH_KEY_PREFIX+k]=t[k];delete t[k];}}));
         } catch(e) {}
     }
 }
