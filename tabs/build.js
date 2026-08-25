@@ -1,4 +1,4 @@
-// Builder revision 2026-08-25 — Corrigé (parenthèse rectifiée) + File Auto Recherches dans l'Académie
+// Builder revision 2026-08-25 — File Auto Recherches corrigée (ciblage strict de l'Académie)
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -458,7 +458,6 @@ module.isActive = function() {
 module.onActivate = function(container) {
     updateStats();
     updateQueueDisplay();
-    // Correction de la parenthèse fermante ici :
     refreshTemplateSelect(document.getElementById('tpl-select') ? document.getElementById('tpl-select').value : undefined);
 };
 
@@ -749,7 +748,7 @@ function injectSenateQueue() {
         return;
     }
 
-    const $bt = uw.$('#building_tasks_main');
+    const $bt = uw.$('.gpwindow_content:visible #building_tasks_main');
     if (!$bt.length) return;
 
     const queue = buildData.queues[uw.Game.townId] || [];
@@ -799,15 +798,16 @@ function injectAcademyQueue() {
         return;
     }
 
-    const $w = uw.$('.gpwindow_content:visible');
-    if (!$w.length) return;
-    
-    const windowText = $w.text() || '';
-    const isAcademy = windowText.includes('Points de recherche') || windowText.includes('Recherche') || $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
-    if (!isAcademy) return;
+    // ON CIBLE EXCLUSIVEMENT L'ACADÉMIE : on filtre toutes les fenêtres ouvertes pour ne garder QUE celle des recherches
+    const $w = uw.$('.gpwindow_content:visible').filter(function() {
+        return uw.$(this).find('.research_list, .research_technology').length > 0;
+    }).first();
 
-    let $target = $w.find('.research_order, .research_queue, [class*="research_order"], [class*="research_queue"]');
-    
+    if (!$w.length) return; // Si l'académie n'est pas ouverte, on arrête tout de suite
+
+    // On cherche la file native de l'Académie
+    let $target = $w.find('.game_data_queue, .CGameDataQueue').first();
+
     if (!$target.length) {
         $w.find('div, span, p').each(function() {
             const txt = uw.$(this).text();
@@ -821,9 +821,12 @@ function injectAcademyQueue() {
         });
     }
 
+    // Fallback : au pire, on se met à la fin du grand bloc
     if (!$target.length) {
         $target = $w.find('.research_list, .left_side').first();
     }
+
+    if (!$target.length) return;
 
     if ($w.css('overflow') !== 'auto') {
         $w.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
@@ -832,7 +835,7 @@ function injectAcademyQueue() {
     const tid = uw.Game.townId;
     const rQueue = (buildData.researchQueues && buildData.researchQueues[tid]) || [];
 
-    const queueHtml = `<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;z-index:100;position:relative;">
+    const queueHtml = `<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:15px auto 10px auto;width:95%;padding:10px;flex-shrink:0;z-index:100;position:relative;clear:both;box-sizing:border-box;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
             <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Recherches</span>
             <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${rQueue.length}</span>
@@ -840,6 +843,7 @@ function injectAcademyQueue() {
         <div class="research-queue-items" style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;"></div>
     </div>`;
 
+    // On l'injecte JUSTE EN DESSOUS de la file de l'Académie
     if ($target.length) {
         $target.after(queueHtml);
     } else {
@@ -873,7 +877,11 @@ function refreshAcademyQueue() {
 }
 
 function addBuildButtons() {
-    const $w = uw.$('.gpwindow_content:visible');
+    // Boutons de construction limités au Sénat
+    const $w = uw.$('.gpwindow_content:visible').filter(function() {
+        return uw.$(this).find('.building').length > 0 && !uw.$(this).find('.research_list').length;
+    }).first();
+    
     if (!$w.length) return;
 
     $w.find('.building').each(function() {
@@ -918,11 +926,12 @@ function addBuildButtons() {
 }
 
 function addResearchButtons() {
-    const $w = uw.$('.gpwindow_content:visible');
+    // Boutons de recherche limités exclusivement à l'Académie
+    const $w = uw.$('.gpwindow_content:visible').filter(function() {
+        return uw.$(this).find('.research_technology, .research_list').length > 0;
+    }).first();
+
     if (!$w.length) return;
-    const windowText = $w.text() || '';
-    const isAcademy = windowText.includes('Points de recherche') || windowText.includes('Recherche') || $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
-    if (!isAcademy) return;
 
     $w.find('.research_technology, .research').each(function() {
         const $el = uw.$(this);
