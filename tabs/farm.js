@@ -292,24 +292,67 @@
         return randomMins * 60 * 1000;
     }
 
-    // ─── TÂCHES ALÉATOIRES (OUVERTURE ET FERMETURE PROPRE) ───────────────────────
+    // ─── TÂCHES ALÉATOIRES AMÉLIORÉES ET DIVERSIFIÉES ─────────────────────────────
 
     async function performRandomHumanActions() {
         if (!farmData.enabled) return;
         
         try {
-            log('FARM', 'Routine humaine : Ouverture et fermeture progressive de 2 onglets...', 'info');
+            log('FARM', 'Routine humaine : Actions aléatoires avancées...', 'info');
 
             const possibleTasks = [
-                { name: 'Rapports', type: uw.GPWindowMgr?.TYPE_REPORT },
-                { name: 'Carte', type: uw.GPWindowMgr?.TYPE_MAP },
-                { name: 'Alliance', type: uw.GPWindowMgr?.TYPE_ALLIANCE },
-                { name: 'Forum Alliance', type: uw.GPWindowMgr?.TYPE_ALLIANCE_FORUM || uw.GPWindowMgr?.TYPE_FORUM },
-                { name: 'Rang / Classement', type: uw.GPWindowMgr?.TYPE_RANKING }
+                {
+                    name: 'Messages',
+                    type: uw.GPWindowMgr?.TYPE_MESSAGE || uw.GPWindowMgr?.TYPE_MAIL,
+                    action: async (win) => {
+                        await new Promise(r => setTimeout(r, 800));
+                        const firstMsg = win.getEl().find('.message_list .message_row, .messages_list tr, .mail_list li, .list_messages tr').first();
+                        if (firstMsg.length) {
+                            firstMsg.click();
+                            await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1001) + 1000));
+                        }
+                    }
+                },
+                {
+                    name: 'Rapports',
+                    type: uw.GPWindowMgr?.TYPE_REPORT,
+                    action: async (win) => {
+                        await new Promise(r => setTimeout(r, 800));
+                        const firstReport = win.getEl().find('.report_list .report_row, .reports_list tr, .report_list li').first();
+                        if (firstReport.length) {
+                            firstReport.click();
+                            await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1001) + 1000));
+                        }
+                    }
+                },
+                {
+                    name: 'Forum Alliance',
+                    type: uw.GPWindowMgr?.TYPE_ALLIANCE_FORUM || uw.GPWindowMgr?.TYPE_FORUM,
+                    action: async (win) => {
+                        await new Promise(r => setTimeout(r, 800));
+                        const tabs = win.getEl().find('.forum_tabs a, .sub_tabs a, .forum_navigation li, .nui_tabs_container a');
+                        if (tabs.length) {
+                            const randomTab = tabs.eq(Math.floor(Math.random() * tabs.length));
+                            randomTab.click();
+                            await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1001) + 1000));
+                        }
+                    }
+                },
+                {
+                    name: 'Carte',
+                    type: uw.GPWindowMgr?.TYPE_MAP,
+                    action: async () => {}
+                },
+                {
+                    name: 'Rang / Classement',
+                    type: uw.GPWindowMgr?.TYPE_RANKING,
+                    action: async () => {}
+                }
             ].filter(t => t.type !== undefined);
 
             if (possibleTasks.length === 0) return;
 
+            // Mélange aléatoire total pour piocher 2 actions différentes à chaque cycle
             possibleTasks.sort(() => Math.random() - 0.5);
             const selectedTasks = possibleTasks.slice(0, 2);
 
@@ -320,6 +363,11 @@
                 
                 if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
                     const winInstance = uw.GPWindowMgr.Create(task.type);
+
+                    // Exécuter l'action spécifique de l'onglet (clic sur message, rapport, ou onglet de forum)
+                    if (typeof task.action === 'function' && winInstance) {
+                        await task.action(winInstance);
+                    }
 
                     // Temps d'attente "humain" entre 2 et 4 secondes
                     const waitTime = Math.floor(Math.random() * 2001) + 2000;
@@ -337,7 +385,7 @@
                     await new Promise(r => setTimeout(r, 3000));
                 }
 
-                // Petite pause naturelle entre les deux actions
+                // Pause naturelle entre les deux actions
                 await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 800));
             }
 
@@ -354,7 +402,7 @@
         // 1. DÉBUT DU CYCLE : Affichage du bouton "Stop current routine"
         showStopButton(true);
 
-        // Exécuter les 2 tâches aléatoires (ouverture -> attente 2-4s -> fermeture systématique)
+        // Exécuter les 2 tâches aléatoires (avec les nouvelles interactions et fermetures propres)
         await performRandomHumanActions();
 
         if (!farmData.enabled) {
