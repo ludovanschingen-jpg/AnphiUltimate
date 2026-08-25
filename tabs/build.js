@@ -17,17 +17,33 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Dictionnaire de sprites validé
+    // Liste des recherches classiques de l'Académie pour la grille du bas
+    const RESEARCHES_LIST = [
+        'stone_cultivation', 'booty', 'espionage', 'slinger', 'archer', 'hoplite', 'town_guard', 
+        'architecture', 'ceramics', 'crane', 'colony_ship', 'bireme', 'fire_ship', 'demolition_ship', 
+        'trireme', 'fast_transport', 'transport_ship', 'phalanx', 'ram', 'cartography', 
+        'meteorology', 'code_of_laws', 'mathematics', 'plow', 'pillage', 'negotiation', 'cryptology'
+    ];
+    
+    const RESEARCH_NAMES = {
+        stone_cultivation: 'Céramique / Culture', booty: 'Butin', espionage: 'Espionnage', slinger: 'Frondeur',
+        archer: 'Archer', hoplite: 'Hoplite', town_guard: 'Gardes de la ville', architecture: 'Architecture',
+        ceramics: 'Céramique', crane: 'Grue', colony_ship: 'Navire de colonisation', bireme: 'Birème',
+        fire_ship: 'Bateau-feu', demolition_ship: 'Bateau incendiaire', trireme: ' Trirème',
+        fast_transport: 'Transport rapide', transport_ship: 'Navire de transport', phalanx: 'Phalange',
+        ram: 'Bélier', cartography: 'Cartographie', meteorology: 'Météorologie', code_of_laws: 'Code des lois',
+        mathematics: 'Mathématiques', plow: 'Charrue', pillage: 'Pillage', negotiation: 'Négociation', cryptology: 'Cryptologie'
+    };
+
+    // Sprites bâtiments validés
     const SPRITES = { 
         academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
         hide: [200, 0], ironer: [250, 0], library: [300, 0], lighthouse: [350, 0], 
         lumber: [400, 0], main: [450, 0], 
-        
         market: [0, 50], oracle: [100, 50], statue: [150, 50], 
-        stoner: [200, 50], storage: [250, 50], trade_office: [300, 50], theater: [350, 50], 
+        stoner: [200, 50], storage: [250, 50], temple: [300, 50], theater: [350, 50], 
         thermal: [400, 50], tower: [450, 50], 
-        
-        wall: [0, 100], temple: [50, 100] 
+        wall: [0, 100], trade_office: [50, 100] 
     };
 
     const FR_TO_ID = { 
@@ -44,7 +60,7 @@
         enabled: false, gratisEnabled: false,
         settings: { interval: 2, webhook: '' },
         stats: { built: 0, gratisClaimed: 0 },
-        queues: {}, designerTemplate: {}, nextCheckTime: 0
+        queues: {}, designerTemplate: {}, researchTemplate: {}, nextCheckTime: 0
     };
 
     let senateWatcherInterval = null;
@@ -88,7 +104,7 @@
         if (!document.getElementById('gu-topbar-designer-btn')) {
             const btn = document.createElement('div');
             btn.id = 'gu-topbar-designer-btn';
-            btn.title = "Ouvrir le Designer de Ville";
+            btn.title = "Ouvrir le Designer de Ville & Recherches";
             btn.style = `position: fixed; top: 8px; left: 650px; width: 22px; height: 22px; 
                          background: url('https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png') no-repeat -50px 0; 
                          background-size: 220px 66px; cursor: pointer; z-index: 5000; 
@@ -105,16 +121,16 @@
             const modal = document.createElement('div');
             modal.id = 'gu-designer-modal';
             modal.style = `display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                           width: 1100px; background: #1a1408; border: 3px solid #8B6914; border-radius: 8px; 
+                           width: 1150px; background: #1a1408; border: 3px solid #8B6914; border-radius: 8px; 
                            z-index: 100000; box-shadow: 0 0 30px rgba(0,0,0,0.9); color: #F5DEB3;`;
             
             modal.innerHTML = `
                 <div id="gu-designer-header" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(to bottom, #3b2a18, #1a1408); border-bottom: 2px solid #8B6914; padding: 10px 20px; cursor: move; border-top-left-radius: 6px; border-top-right-radius: 6px;">
-                    <h2 style="margin: 0; font-family: Cinzel, serif; color: #FFD700; font-size: 22px;">🏛️ Gestionnaire de Ville (Designer)</h2>
+                    <h2 style="margin: 0; font-family: Cinzel, serif; color: #FFD700; font-size: 22px;">🏛️ Gestionnaire de Ville & Recherches</h2>
                     <div style="cursor: pointer; font-weight: bold; color: #E53935; font-size: 16px; padding: 5px;" onclick="GU_Build.closeDesigner()">❌ Fermer</div>
                 </div>
                 
-                <div style="padding: 20px;">
+                <div style="padding: 20px; max-height: 75vh; overflow-y: auto;">
                     <div id="gu-modal-grid-content" style="background: rgba(0,0,0,0.4); padding: 25px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.2);">
                         <!-- Rempli dynamiquement -->
                     </div>
@@ -236,6 +252,7 @@
             add: (bid, lvl) => addToQueue(bid, lvl),
             remove: (idx) => removeFromQueue(idx),
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val),
+            updateResearch: (rid, val) => updateResearchLevel(rid, val),
             openDesigner: () => {
                 const modal = document.getElementById('gu-designer-modal');
                 modal.style.top = '50%';
@@ -253,7 +270,7 @@
             resetDesigner: () => resetDesignerGrid()
         };
 
-        log('BUILD', 'Module initialisé avec syntaxe corrigée', 'info');
+        log('BUILD', 'Module initialisé avec interface bâtiments et recherches', 'info');
     };
 
     module.isActive = function() { return buildData.enabled || buildData.gratisEnabled; };
@@ -263,6 +280,9 @@
         if (!buildData.designerTemplate || Object.keys(buildData.designerTemplate).length === 0) {
             buildData.designerTemplate = {};
             importTownLevelsToDesigner(true);
+        }
+        if (!buildData.researchTemplate) {
+            buildData.researchTemplate = {};
         }
     }
 
@@ -309,8 +329,23 @@
             `;
         };
 
+        // Création des cases de recherches (semblables à l'image fournie)
+        const createResearchBox = (rid) => {
+            const resState = buildData.researchTemplate && buildData.researchTemplate[rid] ? 1 : 0;
+            const borderCol = resState > 0 ? '#4CAF50' : '#8B6914';
+            const rName = RESEARCH_NAMES[rid] || rid;
+
+            return `
+                <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 2px solid ${borderCol}; box-shadow: 2px 2px 8px #000; background: rgba(40,30,15,0.8); display: flex; align-items: center; justify-content: center;" title="${rName}">
+                    <div class="research_icon ${rid}" style="width: 35px; height: 35px; background: center center no-repeat; background-size: contain;"></div>
+                    <input type="number" min="0" max="1" value="${resState}" onchange="GU_Build.updateResearch('${rid}', this.value)" 
+                           style="position: absolute; bottom: 0; right: 0; width: 28px; height: 18px; background: rgba(0,0,0,0.85); border: 1px solid #D4AF37; color: #FFF; text-align: center; font-size: 12px; font-weight: bold; border-radius: 2px; padding: 0; box-sizing: border-box; margin:0;" />
+                </div>
+            `;
+        };
+
         container.innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 30px; align-items: center;">
+            <div style="display: flex; flex-direction: column; gap: 20px; align-items: center;">
                 
                 <!-- BÂTIMENTS CLASSIQUES -->
                 <div style="width: 100%;">
@@ -321,7 +356,7 @@
                 </div>
 
                 <!-- BÂTIMENTS SPÉCIAUX (Gauche et Droite) -->
-                <div style="display: flex; justify-content: space-between; width: 85%; margin-top: 10px;">
+                <div style="display: flex; justify-content: space-between; width: 85%; margin-top: 5px;">
                     <div style="display: flex; flex-direction: column; align-items: center;">
                         <div style="font-size: 13px; color: #D4AF37; margin-bottom: 10px; font-weight: bold;">SPÉCIAUX GAUCHE (1 Max)</div>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -341,6 +376,17 @@
                     </div>
                 </div>
 
+                <!-- LIGNE DE SÉPARATION COMME SUR LE SCREENSHOT -->
+                <div style="width: 100%; height: 2px; background: linear-gradient(to right, transparent, #D4AF37, transparent); margin: 15px 0;"></div>
+
+                <!-- RECHERCHES D'ACADÉMIE -->
+                <div style="width: 100%;">
+                    <div style="font-size: 14px; color: #D4AF37; border-bottom: 1px solid rgba(212,175,55,0.3); margin-bottom: 15px; font-weight: bold; text-align: center;">RECHERCHES DE L'ACADÉMIE</div>
+                    <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;">
+                        ${RESEARCHES_LIST.map(createResearchBox).join('')}
+                    </div>
+                </div>
+
             </div>
         `;
     }
@@ -353,6 +399,15 @@
         if (RIGHT_SPECIALS.includes(bid) && num > 0) RIGHT_SPECIALS.forEach(s => { if (s !== bid) buildData.designerTemplate[s] = 0; });
         
         applyPrerequisites(bid, num);
+        saveData();
+        renderDesignerModalGrid();
+    }
+
+    function updateResearchLevel(rid, val) {
+        let num = parseInt(val) || 0;
+        if (num < 0) num = 0; if (num > 1) num = 1;
+        if (!buildData.researchTemplate) buildData.researchTemplate = {};
+        buildData.researchTemplate[rid] = num;
         saveData();
         renderDesignerModalGrid();
     }
@@ -405,7 +460,11 @@
     }
 
     function saveDesignerTemplate() { saveData(); log('BUILD', 'Template sauvegardé.', 'success'); }
-    function resetDesignerGrid() { for (let key in buildData.designerTemplate) buildData.designerTemplate[key] = 0; saveData(); renderDesignerModalGrid(); log('BUILD', 'Niveaux réinitialisés.', 'info'); }
+    function resetDesignerGrid() { 
+        for (let key in buildData.designerTemplate) buildData.designerTemplate[key] = 0; 
+        for (let key in buildData.researchTemplate) buildData.researchTemplate[key] = 0; 
+        saveData(); renderDesignerModalGrid(); log('BUILD', 'Niveaux réinitialisés.', 'info'); 
+    }
 
     function generateQueueFromDesigner() {
         const tid = uw.Game.townId;
