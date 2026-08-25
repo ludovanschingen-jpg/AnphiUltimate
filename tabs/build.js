@@ -52,23 +52,53 @@ const RESEARCH_FALLBACK = {
 };
 
 function getBuildingData(bid){ return uw.GameData?.buildings?.[bid] || null; }
-function getBuildingName(bid){ return getBuildingData(bid)?.name || getBuildingName(bid); }
+function getBuildingName(bid){ return getBuildingData(bid)?.name || NAMES[bid] || bid; }
 function getBuildingMaxLevel(bid){ return Number(getBuildingData(bid)?.max_level ?? BUILDING_MAX_LEVELS[bid] ?? 30); }
+
+// Prérequis bâtiments : Grepolis n'expose pas toujours ces données sous la même
+// propriété selon la version du client. On essaie plusieurs formats natifs puis
+// on utilise une table de secours correspondant aux bâtiments actuels.
+const BUILDING_DEPENDENCY_FALLBACK = {
+    main:[], lumber:[], stoner:[], ironer:[], farm:[], storage:[],
+    market:[['main',3],['storage',5]],
+    barracks:[['ironer',1],['main',2],['farm',3],['lumber',1]],
+    temple:[['stoner',1]],
+    docks:[['main',14],['lumber',15],['ironer',10]],
+    academy:[['main',8],['farm',6],['barracks',5]],
+    wall:[['main',5],['temple',3]],
+    hide:[['main',10],['storage',7],['market',4]],
+    theater:[['main',24],['lumber',35],['ironer',32],['docks',5],['academy',5]],
+    thermal:[['main',24],['farm',35],['docks',5],['academy',5]],
+    library:[['main',24],['academy',20],['docks',5]],
+    lighthouse:[['main',24],['docks',20],['academy',5]],
+    tower:[['main',21],['wall',20],['temple',5],['market',5]],
+    statue:[['main',21],['temple',12],['market',5]],
+    oracle:[['main',21],['hide',10],['temple',5],['market',5]],
+    trade_office:[['main',21],['market',15],['temple',5]]
+};
+
+function normalizeBuildingDependencies(raw){
+    if(!raw || typeof raw!=='object') return [];
+    return Object.entries(raw)
+        .map(([id,lvl])=>[String(id),Number(lvl)])
+        .filter(([id,lvl])=>NORMAL_BUILDINGS.includes(id)||SPECIAL_LEFT.includes(id)||SPECIAL_RIGHT.includes(id))
+        .filter(([,lvl])=>Number.isFinite(lvl)&&lvl>0);
+}
+
 function getBuildingDependencies(bid){
-    const deps=getBuildingData(bid)?.dependencies;
-    if(deps && typeof deps==='object') return Object.entries(deps).map(([id,lvl])=>[id,Number(lvl)]);
-    const fallback={
-        main:[],lumber:[],stoner:[],ironer:[],farm:[],storage:[],
-        market:[['main',3],['storage',5]],barracks:[['ironer',1],['main',2],['farm',3],['lumber',1]],
-        temple:[['stoner',1]],docks:[['main',14],['lumber',15],['ironer',10]],academy:[['main',8],['farm',6],['barracks',5]],
-        wall:[['main',5],['temple',3]],hide:[['main',10],['storage',7],['market',4]],
-        theater:[['main',24],['lumber',35],['ironer',32],['docks',5],['academy',5]],
-        thermal:[['main',24],['farm',35],['docks',5],['academy',5]],
-        library:[['main',24],['academy',20],['docks',5]],lighthouse:[['main',24],['docks',20],['academy',5]],
-        tower:[['main',21],['wall',20],['temple',5],['market',5]],statue:[['main',21],['temple',12],['market',5]],
-        oracle:[['main',21],['hide',10],['temple',5],['market',5]],trade_office:[['main',21],['market',15],['temple',5]]
-    };
-    return fallback[bid] || [];
+    const data=getBuildingData(bid);
+    const candidates=[
+        data?.dependencies,
+        data?.building_dependencies,
+        data?.requirements,
+        data?.prerequisites,
+        data?.build_dependencies
+    ];
+    for(const raw of candidates){
+        const deps=normalizeBuildingDependencies(raw);
+        if(deps.length) return deps;
+    }
+    return BUILDING_DEPENDENCY_FALLBACK[bid] || [];
 }
 function getResearchData(rid){ return uw.GameData?.researches?.[rid] || null; }
 function getResearchName(rid){ return getResearchData(rid)?.name || RESEARCH_FALLBACK[rid]?.name || rid; }
