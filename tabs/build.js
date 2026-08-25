@@ -1,4 +1,4 @@
-// Builder revision 2026-08-25 — File Auto Recherches (Design Sénat + Emplacement parfait)
+// Builder revision 2026-08-25 — Injection de force sous la file de l'Académie
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -792,54 +792,64 @@ function refreshSenateQueue() {
     }
 }
 
+// ---------------------------------------------------------------------------------
+// NOUVEAU SYSTEME D'INJECTION (FORCE L'EMPLACEMENT SOUS LA FILE DE L'ACADEMIE)
+// ---------------------------------------------------------------------------------
 function injectAcademyQueue() {
-    // Si la file existe déjà, on la met juste à jour
     if (uw.$('#autobuild-academy-queue').length) {
         refreshAcademyQueue();
         return;
     }
 
-    // 1. On trouve la bonne fenêtre (Académie)
+    // 1. On cherche explicitement la fenêtre qui contient les textes "Points de recherche"
+    // Cela nous garantit à 100% d'être dans l'Académie, même si le Sénat est ouvert à côté
     const $w = uw.$('.gpwindow_content:visible').filter(function() {
-        return uw.$(this).find('.research_list, .research_technology').length > 0;
+        const txt = uw.$(this).text() || '';
+        return txt.includes('Points de recherche') && txt.includes('File de recherche');
     }).first();
 
     if (!$w.length) return;
 
-    // 2. On cible précisément la file de recherche native du jeu
-    let $target = $w.find('.game_data_queue, .CGameDataQueue').first();
-
-    if (!$target.length) {
-        $w.find('div, span, p').each(function() {
-            const txt = uw.$(this).text();
-            if (txt && (txt.includes('File de recherche') || txt.includes('Research'))) {
-                const $box = uw.$(this).closest('.CGameDataQueue, .game_data_queue, div');
-                if ($box.length) {
-                    $target = $box;
-                    return false;
-                }
-            }
-        });
+    // 2. On rend la fenêtre scrollable pour être sûr de voir la file ajoutée en bas
+    if ($w.css('overflow') !== 'auto') {
+        $w.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
     }
 
-    // Sécurité si on ne trouve vraiment pas la file native, on se met sous la liste
-    if (!$target.length) {
-        $target = $w.find('.research_list, .left_side').first();
+    // 3. On va chercher *exactement* le bout de texte "File de recherche" pour se mettre en dessous
+    let $target = null;
+    const $elementsWithText = $w.find('*:contains("File de recherche")');
+    
+    if ($elementsWithText.length > 0) {
+        // On prend l'élément le plus bas/profond dans le code (celui qui entoure le texte directement)
+        const $deepest = $elementsWithText.last();
+        
+        // On remonte un peu l'arbre HTML pour trouver la grosse boite qui contient cette file
+        $target = $deepest.closest('.game_data_queue, .CGameDataQueue, [class*="queue"]');
+        
+        // S'il n'y a pas de classe "queue", on remonte simplement de deux crans par sécurité
+        if (!$target.length) {
+            $target = $deepest.parent().parent(); 
+        }
     }
-    if (!$target.length) return;
 
-    // 3. On récupère la file d'attente des recherches
     const tid = uw.Game.townId;
     const rQueue = (buildData.researchQueues && buildData.researchQueues[tid]) || [];
 
-    // 4. TON CODE EXACT (adapté pour les recherches) injecté juste en dessous de la file native
-    $target.after(`<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;">
+    const queueHtml = `<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;position:relative;clear:both;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
             <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Recherches</span>
             <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${rQueue.length}</span>
         </div>
         <div class="research-queue-items" style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;"></div>
-    </div>`);
+    </div>`;
+
+    // 4. On injecte EN DESSOUS ($target.after)
+    if ($target && $target.length) {
+        $target.after(queueHtml);
+    } else {
+        // En cas d'échec total (très improbable), on le force tout en bas de la fenêtre
+        $w.children().first().append(queueHtml);
+    }
     
     refreshAcademyQueue();
 }
@@ -917,14 +927,15 @@ function addBuildButtons() {
 }
 
 function addResearchButtons() {
-    // Boutons de recherche limités exclusivement à l'Académie
+    // Boutons de recherche limités exclusivement à l'Académie avec le ciblage par mot-clé
     const $w = uw.$('.gpwindow_content:visible').filter(function() {
-        return uw.$(this).find('.research_technology, .research_list').length > 0;
+        const txt = uw.$(this).text() || '';
+        return txt.includes('Points de recherche');
     }).first();
 
     if (!$w.length) return;
 
-    $w.find('.research_technology, .research').each(function() {
+    $w.find('.research_technology, .research, [class*="research_id"]').each(function() {
         const $el = uw.$(this);
         if ($el.find('.ab-research-btn').length) return;
 
