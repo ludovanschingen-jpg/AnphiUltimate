@@ -76,18 +76,19 @@
         if (!document.getElementById('gu-designer-modal')) {
             const modal = document.createElement('div');
             modal.id = 'gu-designer-modal';
+            // Style aux couleurs exactes du parchemin Grepolis tel que demandé
             modal.style = `display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                           width: 1150px; background: #1a1408; border: 3px solid #8B6914; border-radius: 8px; 
-                           z-index: 100000; box-shadow: 0 0 30px rgba(0,0,0,0.9); color: #F5DEB3;`;
+                           width: 1150px; background: #f3e5c8; border: 3px solid #8B6914; border-radius: 4px; 
+                           z-index: 100000; box-shadow: 0 0 30px rgba(0,0,0,0.9); color: #3b2a18;`;
             
             modal.innerHTML = `
-                <div id="gu-designer-header" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(to bottom, #3b2a18, #1a1408); border-bottom: 2px solid #8B6914; padding: 10px 20px; cursor: move; border-top-left-radius: 6px; border-top-right-radius: 6px;">
-                    <h2 style="margin: 0; font-family: Cinzel, serif; color: #FFD700; font-size: 22px;">🏛️ Gestionnaire de Ville & Recherches</h2>
-                    <div style="cursor: pointer; font-weight: bold; color: #E53935; font-size: 16px; padding: 5px;" onclick="GU_Build.closeDesigner()">❌ Fermer</div>
+                <div id="gu-designer-header" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(to bottom, #d4be94, #b59b6c); border-bottom: 2px solid #8B6914; padding: 8px 15px; cursor: move;">
+                    <h2 style="margin: 0; font-family: Cinzel, serif; color: #3b2a18; font-size: 16px; font-weight: bold;">Gestionnaire de Ville</h2>
+                    <div style="cursor: pointer; font-weight: bold; color: #8b0000; font-size: 14px; padding: 2px 6px;" onclick="GU_Build.closeDesigner()">✕ Fermer</div>
                 </div>
                 
-                <div style="padding: 20px; max-height: 75vh; overflow-y: auto;">
-                    <div id="gu-modal-grid-content" style="background: rgba(0,0,0,0.4); padding: 25px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.2);">
+                <div style="padding: 15px; max-height: 75vh; overflow-y: auto;">
+                    <div id="gu-modal-grid-content">
                         <!-- Grille -->
                     </div>
                 </div>
@@ -112,10 +113,23 @@
         window.GU_Build = {
             openDesigner: () => {
                 const modal = document.getElementById('gu-designer-modal');
+                modal.style.top = '50%';
+                modal.style.left = '50%';
+                modal.style.transform = 'translate(-50%, -50%)';
                 modal.style.display = 'block';
                 renderGrid();
             },
-            closeDesigner: () => { document.getElementById('gu-designer-modal').style.display = 'none'; }
+            closeDesigner: () => { document.getElementById('gu-designer-modal').style.display = 'none'; },
+            updateDesigner: (bid, val) => {
+                if (!buildData.designerTemplate) buildData.designerTemplate = {};
+                buildData.designerTemplate[bid] = parseInt(val) || 0;
+                saveData();
+            },
+            updateResearch: (rid, val) => {
+                if (!buildData.researchTemplate) buildData.researchTemplate = {};
+                buildData.researchTemplate[rid] = parseInt(val) || 0;
+                saveData();
+            }
         };
     };
 
@@ -125,61 +139,70 @@
         const container = document.getElementById('gu-modal-grid-content');
         if (!container) return;
 
-        const boxSize = 55;
+        const boxSize = 50;
 
-        const createBuildingBox = (bid) => `
-            <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 2px solid #8B6914; background: #1a1408; overflow: hidden;" title="${NAMES[bid]}">
-                <div style="width: 50px; height: 50px; transform: scale(1.1); position: absolute; top: 2px; left: 2px; pointer-events: none;">
-                    <div class="building_icon ${bid}" style="width: 50px; height: 50px;"></div>
+        const createBuildingBox = (bid) => {
+            const level = buildData.designerTemplate[bid] || 0;
+            return `
+                <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 1px solid #7c5c23; background: #fff; box-shadow: inset 0 0 3px rgba(0,0,0,0.2); overflow: hidden;" title="${NAMES[bid]}">
+                    <div style="width: 50px; height: 50px; position: absolute; top: 0; left: 0; pointer-events: none;">
+                        <div class="building_icon ${bid}" style="width: 50px; height: 50px;"></div>
+                    </div>
+                    <input type="number" min="0" max="50" value="${level}" onchange="GU_Build.updateDesigner('${bid}', this.value)" 
+                           style="position: absolute; bottom: 1px; right: 1px; width: 26px; height: 16px; background: rgba(0,0,0,0.8); border: 1px solid #7c5c23; color: #fff; text-align: center; font-size: 10px; font-weight: bold; z-index: 2;" />
                 </div>
-            </div>
-        `;
+            `;
+        };
 
-        const createResearchBox = (rid) => `
-            <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 2px solid #8B6914; background: rgba(30,22,10,0.95); display: flex; align-items: center; justify-content: center; overflow: hidden;" title="${rid}">
-                <div style="width: 45px; height: 45px; pointer-events: none; background: url('https://gpit.innogamescdn.com/images/game/researches/${rid}.png') center center no-repeat; background-size: contain;"></div>
-            </div>
-        `;
+        const createResearchBox = (rid) => {
+            const resState = buildData.researchTemplate && buildData.researchTemplate[rid] ? buildData.researchTemplate[rid] : 0;
+            return `
+                <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 1px solid #7c5c23; background: #fff; box-shadow: inset 0 0 3px rgba(0,0,0,0.2); overflow: hidden;" title="${rid}">
+                    <div style="width: 50px; height: 50px; position: absolute; top: 0; left: 0; pointer-events: none;">
+                        <div class="research_icon ${rid}" style="width: 50px; height: 50px; background-size: contain; background-repeat: no-repeat; background-position: center;"></div>
+                    </div>
+                    <input type="number" min="0" max="1" value="${resState}" onchange="GU_Build.updateResearch('${rid}', this.value)" 
+                           style="position: absolute; bottom: 1px; right: 1px; width: 26px; height: 16px; background: rgba(0,0,0,0.8); border: 1px solid #7c5c23; color: #fff; text-align: center; font-size: 10px; font-weight: bold; z-index: 2;" />
+                </div>
+            `;
+        };
 
         container.innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 20px; align-items: center;">
-                <div style="width: 100%;">
-                    <div style="font-size: 13px; color: #D4AF37; border-bottom: 1px solid rgba(212,175,55,0.3); margin-bottom: 10px; font-weight: bold; text-align: center;">BÂTIMENTS CLASSIQUES</div>
-                    <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;">
-                        ${CLASSIC_BUILDINGS.map(createBuildingBox).join('')}
+            <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
+                
+                <!-- BÂTIMENTS CLASSIQUES -->
+                <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 3px;">
+                    ${CLASSIC_BUILDINGS.map(createBuildingBox).join('')}
+                </div>
+
+                <!-- BÂTIMENTS SPÉCIAUX -->
+                <div style="display: flex; justify-content: space-between; width: 100%; padding: 0 40px; box-sizing: border-box;">
+                    <div style="display: flex; gap: 3px;">
+                        ${LEFT_SPECIALS.map(createBuildingBox).join('')}
+                    </div>
+                    <div style="display: flex; gap: 3px;">
+                        ${RIGHT_SPECIALS.map(createBuildingBox).join('')}
                     </div>
                 </div>
 
-                <div style="display: flex; justify-content: space-between; width: 85%; margin-top: 5px;">
-                    <div style="display: flex; flex-direction: column; align-items: center;">
-                        <div style="font-size: 12px; color: #D4AF37; margin-bottom: 8px; font-weight: bold;">SPÉCIAUX GAUCHE</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                            ${LEFT_SPECIALS.map(createBuildingBox).join('')}
-                        </div>
+                <!-- LIGNE DE SÉPARATION COMME SUR L'IMAGE -->
+                <div style="width: 100%; height: 1px; background: #7c5c23; margin: 10px 0;"></div>
+
+                <!-- RECHERCHES DE L'ACADÉMIE -->
+                <div style="display: flex; flex-direction: column; gap: 3px; align-items: center; width: 100%;">
+                    <div style="display: flex; justify-content: center; gap: 3px; flex-wrap: wrap;">
+                        ${RESEARCH_ROWS[0].map(createResearchBox).join('')}
                     </div>
-                    <div style="display: flex; flex-direction: column; align-items: center;">
-                        <div style="font-size: 12px; color: #D4AF37; margin-bottom: 8px; font-weight: bold;">SPÉCIAUX DROITE</div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                            ${RIGHT_SPECIALS.map(createBuildingBox).join('')}
-                        </div>
+                    <div style="display: flex; justify-content: center; gap: 3px; flex-wrap: wrap;">
+                        ${RESEARCH_ROWS[1].map(createResearchBox).join('')}
                     </div>
                 </div>
 
-                <div style="width: 100%; height: 2px; background: linear-gradient(to right, transparent, #D4AF37, transparent); margin: 10px 0;"></div>
-
-                <div style="width: 100%;">
-                    <div style="font-size: 13px; color: #D4AF37; border-bottom: 1px solid rgba(212,175,55,0.3); margin-bottom: 10px; font-weight: bold; text-align: center;">RECHERCHES DE L'ACADÉMIE</div>
-                    <div style="display: flex; flex-direction: column; gap: 6px; align-items: center;">
-                        <div style="display: flex; justify-content: center; gap: 6px; flex-wrap: wrap;">
-                            ${RESEARCH_ROWS[0].map(createResearchBox).join('')}
-                        </div>
-                        <div style="display: flex; justify-content: center; gap: 6px; flex-wrap: wrap;">
-                            ${RESEARCH_ROWS[1].map(createResearchBox).join('')}
-                        </div>
-                    </div>
-                </div>
             </div>
         `;
     }
+
+    function saveData() { GM_setValue('gu_build_data', JSON.stringify(buildData)); }
+    function loadData() { const s = GM_getValue('gu_build_data'); if (s) try { Object.assign(buildData, JSON.parse(s)); } catch(e) {} }
 
 })(module);
