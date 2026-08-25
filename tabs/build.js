@@ -896,8 +896,16 @@ function initSpecialToggleHandlers() {
             const group=SPECIAL_LEFT.includes(bid)?SPECIAL_LEFT:SPECIAL_RIGHT;
             const wasSelected=cell.dataset.selected==='1';
             group.forEach(gid=>{const el=document.querySelector(`.tpl-special-cell[data-bid="${gid}"]`);if(!el)return;el.dataset.selected='0';el.querySelector('.tpl-special-icon').style.borderColor='#4a4a3a';el.querySelector('.tpl-special-icon div').style.opacity='0.5';});
-            if(!wasSelected){cell.dataset.selected='1';cell.querySelector('.tpl-special-icon').style.borderColor='#FFD700';cell.querySelector('.tpl-special-icon div').style.opacity='1';}
-            refreshTemplatePrerequisites(true);
+            if(!wasSelected){
+                cell.dataset.selected='1';
+                cell.querySelector('.tpl-special-icon').style.borderColor='#FFD700';
+                cell.querySelector('.tpl-special-icon div').style.opacity='1';
+                // Dès la sélection d'un bâtiment spécial, ses prérequis sont
+                // immédiatement propagés dans les champs du Builder.
+                applyPrerequisitesToTemplateUI();
+            } else {
+                refreshTemplatePrerequisites(true);
+            }
         };
     });
 }
@@ -909,7 +917,30 @@ function initResearchToggleHandlers(){
 }
 
 function initTemplateInputHandlers(){
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{inp.addEventListener('input',()=>refreshTemplatePrerequisites(true));inp.addEventListener('change',()=>refreshTemplatePrerequisites(true));});
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{
+        inp.addEventListener('input',()=>refreshTemplatePrerequisites(true));
+        inp.addEventListener('change',()=>refreshTemplatePrerequisites(true));
+    });
+}
+
+// Calcule les prérequis à partir de toutes les sélections actuelles et
+// les écrit immédiatement dans l'interface. Cette fonction ne sauvegarde
+// rien et ne modifie pas la file de construction : elle prépare le template.
+function applyPrerequisitesToTemplateUI(){
+    const result=calculateTemplateRequirements();
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{
+        const bid=inp.dataset.bid;
+        const explicit=Number(inp.value)||0;
+        const required=Number(result.buildings[bid])||0;
+        const max=getBuildingMaxLevel(bid);
+        const finalLevel=Math.min(Math.max(explicit,required),max);
+        if(explicit!==finalLevel) inp.value=String(finalLevel);
+        inp.style.borderColor=(required>explicit)?'#66BB6A':'#8B6914';
+        inp.title=(required>explicit)
+            ? `${getBuildingName(bid)} — prérequis du template: niveau ${required}`
+            : getBuildingName(bid);
+    });
+    refreshTemplatePrerequisites(false);
 }
 
 function getTemplateSelections(){
@@ -929,8 +960,17 @@ function calculateTemplateRequirements(){
     const required=Object.assign({},buildings);
     const visiting=new Set();
     function ensureBuildingRequirement(bid,lvl){
-        if(!bid||!lvl||(required[bid]||0)>=lvl||visiting.has(bid))return;
-        visiting.add(bid);getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>ensureBuildingRequirement(reqBid,reqLvl));required[bid]=Math.max(required[bid]||0,lvl);visiting.delete(bid);
+        const target=Number(lvl)||0;
+        if(!bid||target<=0) return;
+        const previous=Number(required[bid])||0;
+        // On ne reparcourt qu'une branche actuellement en cours de résolution.
+        // Une valeur déjà sélectionnée ne doit surtout pas empêcher la descente
+        // dans ses dépendances.
+        if(visiting.has(bid)) return;
+        visiting.add(bid);
+        getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>ensureBuildingRequirement(reqBid,reqLvl));
+        required[bid]=Math.max(previous,target);
+        visiting.delete(bid);
     }
     Object.entries(buildings).forEach(([bid,lvl])=>ensureBuildingRequirement(bid,lvl));
     Object.keys(researches).forEach(rid=>ensureBuildingRequirement('academy',getResearchAcademyLevel(rid)));
@@ -1115,7 +1155,19 @@ function applyTemplateToTown(templateName){
     const currentLevel=bid=>projected[bid]||0;
     function queueLevelUp(bid){const lvl=currentLevel(bid)+1;newItems.push({buildingId:bid,level:lvl});projected[bid]=lvl;}
     function checkExclusiveGroup(bid){const group=SPECIAL_LEFT.includes(bid)?SPECIAL_LEFT:(SPECIAL_RIGHT.includes(bid)?SPECIAL_RIGHT:null);if(!group)return true;const conflict=group.find(other=>other!==bid&&currentLevel(other)>=1);if(conflict){log('BUILD',`Template: ${getBuildingName(bid)} ignore - ${getBuildingName(conflict)} occupe deja cet emplacement special`,'error');hadConflict=true;return false;}return true;}
-    function ensureLevel(bid,target){if(currentLevel(bid)>=target)return;if(currentLevel(bid)<1){if(visiting.has(bid))return;visiting.add(bid);if(!checkExclusiveGroup(bid)){visiting.delete(bid);return;}getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>ensureLevel(reqBid,reqLvl));if(currentLevel(bid)<1)queueLevelUp(bid);visiting.delete(bid);}while(currentLevel(bid)<target)queueLevelUp(bid);}
+    function ensureLevel(bid,target){
+        target=Number(target)||0;
+        if(!bid||target<=0) return;
+        if(visiting.has(bid)) return;
+        visiting.add(bid);
+        // Les dépendances doivent être vérifiées même si le bâtiment cible
+        // existe déjà : une file partiellement remplie peut encore manquer
+        // un prérequis d'un bâtiment sélectionné dans le template.
+        if(!checkExclusiveGroup(bid)){visiting.delete(bid);return;}
+        getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>ensureLevel(reqBid,reqLvl));
+        while(currentLevel(bid)<target) queueLevelUp(bid);
+        visiting.delete(bid);
+    }
     Object.keys(template).forEach(key=>{
         if(key.startsWith(RESEARCH_KEY_PREFIX)) return;
         const target=Number(template[key])||0;
