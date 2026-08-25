@@ -3,7 +3,6 @@
     const log = module.log;
     const GM_getValue = module.GM_getValue;
     const GM_setValue = module.GM_setValue;
-    const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
 
     const NAMES = { 
         main: 'Sénat', lumber: 'Scierie', stoner: 'Carrière', ironer: 'Mine d\'argent', 
@@ -13,27 +12,9 @@
         tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
     };
 
-    const ALL_BUILDINGS = [
-        'main', 'storage', 'farm', 'lumber', 'stoner', 'ironer', 
-        'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'
-    ];
-
+    const CLASSIC_BUILDINGS = ['main', 'storage', 'farm', 'lumber', 'stoner', 'ironer', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
-    
-    // Coordonnées exactes (multiples de 50px pour correspondre parfaitement au 500x150)
-    // Aucun obélisque, Remparts (300, 0), Comptoir (0, 100), Oracle (100, 50).
-    const SPRITES = { 
-        academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
-        hide: [200, 0], ironer: [250, 0], wall: [300, 0], theater: [350, 0], 
-        lumber: [400, 0], main: [450, 0], 
-        
-        market: [0, 50], oracle: [100, 50], statue: [150, 50], 
-        stoner: [200, 50], storage: [250, 50], temple: [300, 50], thermal: [350, 50], 
-        library: [400, 50], lighthouse: [450, 50], 
-        
-        trade_office: [0, 100], tower: [50, 100] 
-    };
 
     const FR_TO_ID = { 
         'senat': 'main', 'sénat': 'main',
@@ -104,17 +85,17 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>🎨</span> Gestionnaire de Ville (Designer)</div>
+                    <div class="section-title"><span>🎨</span> Designer de Template</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
                     <div style="margin-bottom: 10px; font-size: 11px; color: #F5DEB3; display: flex; justify-content: space-between; align-items: center;">
-                        <span>Style Grille Classique (1 choix max par côté)</span>
+                        <span>Configuration (1 spécial max par côté)</span>
                         <span id="building-points-summary" style="color: #FFD700; font-weight: bold;">0 pts</span>
                     </div>
                     
-                    <div id="designer-container" style="background: rgba(28,22,12,0.85); padding: 10px; border-radius: 6px; border: 2px solid #8B6914; display: flex; flex-direction: column; gap: 10px; max-height: 500px; overflow-y: auto;">
-                        <!-- Généré dynamiquement -->
+                    <div id="designer-container" style="background: rgba(28,22,12,0.85); padding: 12px; border-radius: 6px; border: 2px solid #8B6914; display: flex; flex-direction: column; gap: 12px; max-height: 520px; overflow-y: auto;">
+                        <!-- Grille générée -->
                     </div>
 
                     <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
@@ -244,7 +225,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé (Sprites au ratio exact 50x50)', 'info');
+        log('BUILD', 'Module initialisé avec icônes natives 50x50 et Oracle', 'info');
     };
 
     module.isActive = function() {
@@ -273,7 +254,7 @@
             }
             const buildingList = town.buildingList ? town.buildingList() : {};
             
-            for (const bid of Object.keys(NAMES)) {
+            for (const bid of [...CLASSIC_BUILDINGS, ...LEFT_SPECIALS, ...RIGHT_SPECIALS]) {
                 const currentObj = buildingList[bid];
                 const lvl = currentObj ? (currentObj.level || currentObj.akt_level || 0) : 0;
                 buildData.designerTemplate[bid] = lvl;
@@ -281,7 +262,7 @@
             
             saveData();
             renderDesignerGrid();
-            if (!silent) log('BUILD', 'Niveaux actuels de la ville importés dans le designer !', 'success');
+            if (!silent) log('BUILD', 'Niveaux actuels importés dans le designer !', 'success');
         } catch (e) {
             console.error('[GU Build] Erreur import niveaux ville:', e);
         }
@@ -294,7 +275,6 @@
         let totalLevels = 0;
 
         const renderItems = (bids) => bids.map(bid => {
-            const sp = SPRITES[bid] || [0, 0];
             const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
             totalLevels += level;
             
@@ -302,36 +282,34 @@
             const borderCol = isSpecial && level > 0 ? '#4CAF50' : '#8B6914';
 
             return `
-                <div style="position: relative; width: 50px; height: 50px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.5);" title="${NAMES[bid]}">
-                    <div style="width: 100%; height: 100%; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border: 2px solid ${borderCol}; border-radius: 4px; box-sizing: border-box;"></div>
+                <div style="position: relative; width: 50px; height: 50px; border: 2px solid ${borderCol}; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); overflow: hidden;" title="${NAMES[bid]}">
+                    <div class="building_icon ${bid}" style="width: 50px; height: 50px; display: block;"></div>
                     <input type="number" min="0" max="50" value="${level}" 
                         onchange="GU_Build.updateDesigner('${bid}', this.value)"
-                        style="position: absolute; bottom: 2px; right: 2px; width: 28px; height: 14px; background: rgba(15,10,4,0.95); border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 10px; font-weight: bold; border-radius: 2px; padding: 0; box-sizing: border-box;" />
+                        style="position: absolute; bottom: 1px; right: 1px; width: 28px; height: 15px; background: rgba(15,10,4,0.95); border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; font-weight: bold; border-radius: 2px; padding: 0; box-sizing: border-box;" />
                 </div>
             `;
         }).join('');
 
         container.innerHTML = `
-            <!-- Bâtiments Classiques -->
-            <div style="background: rgba(0,0,0,0.25); padding: 6px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
-                <div style="font-size: 9px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 4px; font-weight: bold;">🏛️ Bâtiments Classiques</div>
-                <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
+            <div style="background: rgba(0,0,0,0.25); padding: 8px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
+                <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold;">🏛️ Bâtiments Classiques</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
                     ${renderItems(CLASSIC_BUILDINGS)}
                 </div>
             </div>
 
-            <!-- Bâtiments Spéciaux -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                <div style="background: rgba(0,0,0,0.25); padding: 6px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
-                    <div style="font-size: 9px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 4px; font-weight: bold; text-align: center;">⭐ Spéciaux Gauche (1 Max)</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div style="background: rgba(0,0,0,0.25); padding: 8px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
+                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; text-align: center;">⭐ Spéciaux Gauche (1 Max)</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
                         ${renderItems(LEFT_SPECIALS)}
                     </div>
                 </div>
 
-                <div style="background: rgba(0,0,0,0.25); padding: 6px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
-                    <div style="font-size: 9px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 4px; font-weight: bold; text-align: center;">⭐ Spéciaux Droite (1 Max)</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
+                <div style="background: rgba(0,0,0,0.25); padding: 8px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
+                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; text-align: center;">⭐ Spéciaux Droite (1 Max)</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
                         ${renderItems(RIGHT_SPECIALS)}
                     </div>
                 </div>
@@ -368,7 +346,7 @@
 
         if (targetLevel <= 0) return;
 
-        if (['thermal', 'library', 'lighthouse', 'tower'].includes(bid) && targetLevel > 0) {
+        if (['thermal', 'library', 'lighthouse', 'tower', 'oracle', 'statue', 'trade_office'].includes(bid) && targetLevel > 0) {
             if ((buildData.designerTemplate['main'] || 0) < 24) buildData.designerTemplate['main'] = 24;
             if ((buildData.designerTemplate['storage'] || 0) < 22) buildData.designerTemplate['storage'] = 22;
         }
@@ -384,6 +362,9 @@
         }
         if (bid === 'tower' && targetLevel > 0) {
             if ((buildData.designerTemplate['wall'] || 0) < 15) buildData.designerTemplate['wall'] = 15;
+        }
+        if (bid === 'oracle' && targetLevel > 0) {
+            if ((buildData.designerTemplate['temple'] || 0) < 12) buildData.designerTemplate['temple'] = 12;
         }
 
         if (bid === 'academy' && targetLevel >= 34) {
@@ -690,9 +671,8 @@
                 $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;">File vide - Utilisez les boutons "+ FILE"</div>');
             } else {
                 $items.html(queue.map((it, i) => {
-                    const sp = SPRITES[it.buildingId] || [0, 0];
-                    return `<div style="width:50px;height:50px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${NAMES[it.buildingId]} niv.${it.level}">
-                        <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;border:2px solid #8B6914;border-radius:4px;box-sizing:border-box;"></div>
+                    return `<div style="width:50px;height:50px;position:relative;display:inline-block;margin:3px;cursor:pointer;border:2px solid #8B6914;border-radius:4px;box-sizing:border-box;" title="${NAMES[it.buildingId]} niv.${it.level}">
+                        <div class="building_icon ${it.buildingId}" style="width:100%;height:100%;"></div>
                         <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
                         <div onclick="event.stopPropagation();GU_Build.remove(${i})" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;display:none;">x</div>
                     </div>`;
@@ -756,9 +736,8 @@
             container.innerHTML = '<div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Sénat pour voir la file</div>';
         } else {
             container.innerHTML = queue.map((it, i) => {
-                const sp = SPRITES[it.buildingId] || [0, 0];
-                return `<div style="width:50px;height:50px;position:relative;cursor:pointer;" title="${NAMES[it.buildingId]} niv.${it.level}">
-                    <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;border:2px solid #8B6914;border-radius:4px;box-sizing:border-box;"></div>
+                return `<div style="width:50px;height:50px;position:relative;cursor:pointer;border:2px solid #8B6914;border-radius:4px;box-sizing:border-box;" title="${NAMES[it.buildingId]} niv.${it.level}">
+                    <div class="building_icon ${it.buildingId}" style="width:100%;height:100%;"></div>
                     <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
                 </div>`;
             }).join('');
