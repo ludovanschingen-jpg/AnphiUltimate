@@ -1,4 +1,4 @@
-// Builder revision 2026-08-25 — File Auto Recherches ultra-robuste dans l'Académie
+// Builder revision 2026-08-25 — Corrigé (parenthèse rectifiée) + File Auto Recherches dans l'Académie
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -458,7 +458,8 @@ module.isActive = function() {
 module.onActivate = function(container) {
     updateStats();
     updateQueueDisplay();
-    refreshTemplateSelect(document.getElementById('tpl-select') ? document.getElementById('tpl-select'].value : undefined);
+    // Correction de la parenthèse fermante ici :
+    refreshTemplateSelect(document.getElementById('tpl-select') ? document.getElementById('tpl-select').value : undefined);
 };
 
 function toggleBuild(enabled) {
@@ -801,12 +802,10 @@ function injectAcademyQueue() {
     const $w = uw.$('.gpwindow_content:visible');
     if (!$w.length) return;
     
-    // Vérification large et garantie de la fenêtre Académie
     const windowText = $w.text() || '';
-    const isAcademy = windowText.includes('Points de recherche') || windowText.includes('Recherche') || $w.find('.research_technology, .research_list, [class*="research"]').length > 0;
+    const isAcademy = windowText.includes('Points de recherche') || windowText.includes('Recherche') || $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
     if (!isAcademy) return;
 
-    // Cherche la file de recherche native par divers sélecteurs possibles
     let $target = $w.find('.research_order, .research_queue, [class*="research_order"], [class*="research_queue"]');
     
     if (!$target.length) {
@@ -841,7 +840,6 @@ function injectAcademyQueue() {
         <div class="research-queue-items" style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;"></div>
     </div>`;
 
-    // Injection avec fallback garanti (si l'élément natif n'est pas trouvé, l'élément s'ajoute directement dans la fenêtre)
     if ($target.length) {
         $target.after(queueHtml);
     } else {
