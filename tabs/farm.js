@@ -100,7 +100,7 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>⏱️</span> Prochaine Récolte (Aléatoire à la seconde)</div>
+                    <div class="section-title"><span>⏱️</span> Prochaine Récolte (Aléatoire 10-17m)</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
@@ -127,7 +127,7 @@
                             </select>
                         </div>
                         <div class="option-group">
-                            <span class="option-label">Intervalle de base</span>
+                            <span class="option-label">Option de pillage</span>
                             <select class="option-select" id="farm-duration">
                                 <option value="1">5 minutes</option>
                                 <option value="2">10 minutes</option>
@@ -136,7 +136,7 @@
                         </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ 2 routines séquentielles (ouverture, action, attente 2-4s, fermeture obligatoire), puis récolte sécurisée, puis timer à la seconde près.
+                        ℹ️ 2 actions séquentielles (fermées obligatoirement), puis récolte sécurisée, puis délai fixe entre 10 et 17 min (à la seconde).
                     </div>
                 </div>
             </div>
@@ -183,7 +183,7 @@
         }
     }
 
-    // ─── INIT ─────────────────────────────────────────────────────────────────────
+    // ─── INIT ────────────────────────────────────────────────────────────────     
 
     module.init = function() {
         loadData();
@@ -207,7 +207,7 @@
             farmData.settings.duration = parseInt(e.target.value);
             saveData();
             const opt = DURATION_OPTIONS[farmData.settings.duration];
-            log('FARM', `Intervalle de base configuré : ${opt.label}`, 'info');
+            log('FARM', `Option de pillage configurée : ${opt.label}`, 'info');
         };
 
         document.getElementById('farm-webhook').onchange = (e) => {
@@ -228,7 +228,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé (séquence stricte 2 actions puis récolte) initialisé', 'info');
+        log('FARM', 'Module humanisé (délai 10-17m strict) initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -283,17 +283,16 @@
         if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
     }
 
-    // ─── TIMER ALÉATOIRE PRÉCIS À LA SECONDE PRÈS ────────────────────────────────
+    // ─── TIMER STRICTEMENT ENTRE 10 ET 17 MINUTES (À LA SECONDE PRÈS) ─────────────
 
     function getRandomIntervalMs() {
-        const opt = DURATION_OPTIONS[farmData.settings.duration] || DURATION_OPTIONS[2];
-        const baseSec = opt.intervalSec; 
-        const extraSecMax = 7 * 60; 
-        const randomSecs = Math.floor(Math.random() * extraSecMax) + baseSec;
-        return randomSecs * 1000;
+        const minSec = 10 * 60; // 10 minutes en secondes
+        const maxSec = 17 * 60; // 17 minutes en secondes
+        const randomSecs = Math.floor(Math.random() * (maxSec - minSec + 1)) + minSec;
+        return randomSecs * 1000; // Conversion en millisecondes
     }
 
-    // ─── 2 ACTIONS SÉQUENTIELLES STRICTES (OUVERTURE -> ACTION -> 2-4s -> FERMETURE OBLIGATOIRE) ───
+    // ─── 2 ACTIONS SÉQUENTIELLES STRICTES (FERMETURE OBLIGATOIRE) ───────────────
 
     async function performRandomHumanActions() {
         if (!farmData.enabled) return;
@@ -362,14 +361,13 @@
 
             if (possibleTasks.length === 0) return;
 
-            // Mélanger la liste et prendre rigoureusement 2 actions distinctes
             possibleTasks.sort(() => Math.random() - 0.5);
             const selectedTasks = possibleTasks.slice(0, 2);
 
             for (const task of selectedTasks) {
                 if (!farmData.enabled) break;
 
-                log('FARM', `Ouverture de l'onglet 1/2 : [${task.name}]`, 'info');
+                log('FARM', `Ouverture de l'onglet : [${task.name}]`, 'info');
                 let winInstance = null;
 
                 try {
@@ -380,7 +378,7 @@
                             await task.action(winInstance);
                         }
 
-                        // Temps d'attente "humain" strict entre 2 et 4 secondes
+                        // Temps d'attente "humain" entre 2 et 4 secondes
                         const waitTime = Math.floor(Math.random() * 2001) + 2000;
                         await new Promise(r => setTimeout(r, waitTime));
                     } else {
@@ -389,7 +387,6 @@
                 } catch (innerErr) {
                     console.error(`[FARM Action Error - ${task.name}]`, innerErr);
                 } finally {
-                    // FERMETURE OBLIGATOIRE GARANTIE (bloque toute fuite de fenêtre ouverte)
                     log('FARM', `Fermeture obligatoire de l'onglet : [${task.name}]`, 'info');
                     try {
                         if (winInstance && typeof winInstance.close === 'function') {
@@ -404,7 +401,6 @@
                     }
                 }
 
-                // Petite pause naturelle entre la 1ère et la 2ème action
                 await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 800));
             }
 
@@ -418,10 +414,9 @@
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
-        // 1. Début de la routine : Affichage du bouton Stop
         showStopButton(true);
 
-        // 2. ÉTAPE 1 & 2 : Lancer la 1ère action aléatoire, puis la 2ème action aléatoire (fermées obligatoirement)
+        // 1. Exécuter les 2 actions aléatoires l'une après l'autre avec fermeture obligatoire
         await performRandomHumanActions();
 
         if (!farmData.enabled) {
@@ -429,7 +424,7 @@
             return;
         }
 
-        // 3. ÉTAPE 3 : SEULEMENT MAINTENANT, lancer la récolte des villages paysans
+        // 2. SEULEMENT ENSUITE : Exécuter la récolte des villages
         await executeFarmClaim();
 
         if (!farmData.enabled) {
@@ -437,10 +432,9 @@
             return;
         }
 
-        // 4. Fin de la routine : Masquage du bouton Stop
         showStopButton(false);
 
-        // 5. Planification du prochain timing aléatoire exact à la seconde près
+        // 3. Programmer le prochain passage entre 10 et 17 minutes (à la seconde près)
         const nextDelay = getRandomIntervalMs();
         const totalSecs = Math.round(nextDelay / 1000);
         const mins = Math.floor(totalSecs / 60);
