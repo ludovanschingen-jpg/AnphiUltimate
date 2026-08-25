@@ -17,7 +17,7 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Liste des recherches classiques de l'Académie pour la grille du bas
+    // Liste complète des recherches de l'Académie
     const RESEARCHES_LIST = [
         'stone_cultivation', 'booty', 'espionage', 'slinger', 'archer', 'hoplite', 'town_guard', 
         'architecture', 'ceramics', 'crane', 'colony_ship', 'bireme', 'fire_ship', 'demolition_ship', 
@@ -29,21 +29,20 @@
         stone_cultivation: 'Céramique / Culture', booty: 'Butin', espionage: 'Espionnage', slinger: 'Frondeur',
         archer: 'Archer', hoplite: 'Hoplite', town_guard: 'Gardes de la ville', architecture: 'Architecture',
         ceramics: 'Céramique', crane: 'Grue', colony_ship: 'Navire de colonisation', bireme: 'Birème',
-        fire_ship: 'Bateau-feu', demolition_ship: 'Bateau incendiaire', trireme: ' Trirème',
+        fire_ship: 'Bateau-feu', demolition_ship: 'Bateau incendiaire', trireme: 'Trirème',
         fast_transport: 'Transport rapide', transport_ship: 'Navire de transport', phalanx: 'Phalange',
         ram: 'Bélier', cartography: 'Cartographie', meteorology: 'Météorologie', code_of_laws: 'Code des lois',
         mathematics: 'Mathématiques', plow: 'Charrue', pillage: 'Pillage', negotiation: 'Négociation', cryptology: 'Cryptologie'
     };
 
-    // Sprites bâtiments validés
+    // Dictionnaire de sprites validé
     const SPRITES = { 
-        academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
-        hide: [200, 0], ironer: [250, 0], library: [300, 0], lighthouse: [350, 0], 
-        lumber: [400, 0], main: [450, 0], 
-        market: [0, 50], oracle: [100, 50], statue: [150, 50], 
-        stoner: [200, 50], storage: [250, 50], temple: [300, 50], theater: [350, 50], 
-        thermal: [400, 50], tower: [450, 50], 
-        wall: [0, 100], trade_office: [50, 100] 
+        main: [450, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
+        storage: [250, 50], farm: [150, 0], barracks: [50, 0], docks: [100, 0], 
+        wall: [0, 100], academy: [0, 0], temple: [300, 50], market: [0, 50], 
+        hide: [200, 0], 
+        theater: [350, 50], thermal: [400, 50], library: [300, 0], lighthouse: [350, 0], 
+        tower: [450, 50], statue: [150, 50], oracle: [100, 50], trade_office: [50, 100] 
     };
 
     const FR_TO_ID = { 
@@ -101,22 +100,26 @@
 
     // --- INJECTION DES ELEMENTS GLOBAUX ---
     function injectGlobalUI() {
+        // Bouton de design placé dans la zone indiquée par la flèche (centre-droit)
         if (!document.getElementById('gu-topbar-designer-btn')) {
             const btn = document.createElement('div');
             btn.id = 'gu-topbar-designer-btn';
-            btn.title = "Ouvrir le Designer de Ville & Recherches";
-            btn.style = `position: fixed; top: 8px; left: 650px; width: 22px; height: 22px; 
-                         background: url('https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png') no-repeat -50px 0; 
-                         background-size: 220px 66px; cursor: pointer; z-index: 5000; 
-                         filter: drop-shadow(0px 1px 2px rgba(0,0,0,0.9));`;
+            btn.innerHTML = '🏛️ Designer';
+            btn.title = "Ouvrir le Gestionnaire de Ville & Recherches";
+            btn.style = `position: fixed; top: 6px; left: 680px; 
+                         background: linear-gradient(180deg, #3b2a18, #1a1408); border: 2px solid #D4AF37; 
+                         color: #FFD700; font-weight: bold; font-family: Cinzel, serif; font-size: 12px;
+                         padding: 3px 12px; border-radius: 4px; cursor: pointer; z-index: 5000; 
+                         box-shadow: 0 2px 5px rgba(0,0,0,0.8); text-shadow: 1px 1px 2px #000;`;
             
-            btn.onmouseover = () => btn.style.transform = 'scale(1.1)';
-            btn.onmouseout = () => btn.style.transform = 'scale(1.0)';
+            btn.onmouseover = () => btn.style.borderColor = '#FFF';
+            btn.onmouseout = () => btn.style.borderColor = '#D4AF37';
             
             btn.onclick = () => GU_Build.openDesigner();
             document.body.appendChild(btn);
         }
 
+        // Fenêtre Modale Géante Déplaçable
         if (!document.getElementById('gu-designer-modal')) {
             const modal = document.createElement('div');
             modal.id = 'gu-designer-modal';
@@ -270,7 +273,7 @@
             resetDesigner: () => resetDesignerGrid()
         };
 
-        log('BUILD', 'Module initialisé avec interface bâtiments et recherches', 'info');
+        log('BUILD', 'Module initialisé avec succès', 'info');
     };
 
     module.isActive = function() { return buildData.enabled || buildData.gratisEnabled; };
@@ -329,17 +332,18 @@
             `;
         };
 
-        // Création des cases de recherches (semblables à l'image fournie)
         const createResearchBox = (rid) => {
             const resState = buildData.researchTemplate && buildData.researchTemplate[rid] ? 1 : 0;
             const borderCol = resState > 0 ? '#4CAF50' : '#8B6914';
             const rName = RESEARCH_NAMES[rid] || rid;
 
             return `
-                <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 2px solid ${borderCol}; box-shadow: 2px 2px 8px #000; background: rgba(40,30,15,0.8); display: flex; align-items: center; justify-content: center;" title="${rName}">
-                    <div class="research_icon ${rid}" style="width: 35px; height: 35px; background: center center no-repeat; background-size: contain;"></div>
+                <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 2px solid ${borderCol}; box-shadow: 2px 2px 8px #000; background: rgba(30,22,10,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; box-sizing: border-box;" title="${rName}">
+                    <div style="font-size: 11px; color: #F5DEB3; text-align: center; line-height: 1.15; overflow: hidden; max-height: 48px; font-weight: bold;">
+                        ${rName}
+                    </div>
                     <input type="number" min="0" max="1" value="${resState}" onchange="GU_Build.updateResearch('${rid}', this.value)" 
-                           style="position: absolute; bottom: 0; right: 0; width: 28px; height: 18px; background: rgba(0,0,0,0.85); border: 1px solid #D4AF37; color: #FFF; text-align: center; font-size: 12px; font-weight: bold; border-radius: 2px; padding: 0; box-sizing: border-box; margin:0;" />
+                           style="position: absolute; bottom: 2px; right: 2px; width: 28px; height: 18px; background: rgba(0,0,0,0.85); border: 1px solid #D4AF37; color: #FFF; text-align: center; font-size: 11px; font-weight: bold; border-radius: 2px; padding: 0; box-sizing: border-box; margin:0;" />
                 </div>
             `;
         };
@@ -376,7 +380,7 @@
                     </div>
                 </div>
 
-                <!-- LIGNE DE SÉPARATION COMME SUR LE SCREENSHOT -->
+                <!-- LIGNE DE SÉPARATION -->
                 <div style="width: 100%; height: 2px; background: linear-gradient(to right, transparent, #D4AF37, transparent); margin: 15px 0;"></div>
 
                 <!-- RECHERCHES D'ACADÉMIE -->
