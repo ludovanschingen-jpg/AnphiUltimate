@@ -10,21 +10,21 @@
         storage: 'Entrepôt', farm: 'Ferme', barracks: 'Caserne', docks: 'Port', 
         wall: 'Remparts', academy: 'Académie', temple: 'Temple', market: 'Marché', hide: 'Grotte',
         theater: 'Théâtre', thermal: 'Thermes', library: 'Bibliothèque', lighthouse: 'Phare', 
-        tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
+        tower: 'Tour', statue: 'Statue divine', trade_office: 'Comptoir' 
     };
 
     const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
-    const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
+    const RIGHT_SPECIALS = ['tower', 'statue', 'trade_office'];
     
-    // Coordonnées officielles validées (sans obélisque, remparts/comptoir corrects, oracle en place)
+    // Coordonnées sans l'obélisque/oracle
     const SPRITES = { 
         main: [450, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
         storage: [250, 50], farm: [150, 0], barracks: [50, 0], docks: [100, 0], 
         wall: [300, 0], academy: [0, 0], temple: [300, 50], market: [0, 50], 
         hide: [200, 0], 
         theater: [350, 50], thermal: [400, 50], library: [300, 0], lighthouse: [350, 0], 
-        tower: [50, 100], statue: [150, 50], oracle: [100, 50], trade_office: [0, 100] 
+        tower: [50, 100], statue: [150, 50], trade_office: [0, 100] 
     };
 
     const FR_TO_ID = { 
@@ -40,7 +40,7 @@
         'grotte': 'hide', 'thermes': 'thermal', 
         'bibliotheque': 'library', 'bibliothèque': 'library',
         'phare': 'lighthouse', 'tour': 'tower', 
-        'statue': 'statue', 'oracle': 'oracle', 'comptoir': 'trade_office', 
+        'statue': 'statue', 'comptoir': 'trade_office', 
         'theatre': 'theater', 'théâtre': 'theater'
     };
 
@@ -236,7 +236,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec le Gestionnaire de Ville classique', 'info');
+        log('BUILD', 'Module initialisé sans obélisque', 'info');
     };
 
     module.isActive = function() {
@@ -303,7 +303,7 @@
         }).join('');
 
         container.innerHTML = `
-            <!-- Bâtiments Classiques en ligne/grille compacte style gestionnaire -->
+            <!-- Bâtiments Classiques -->
             <div style="background: rgba(0,0,0,0.25); padding: 6px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
                 <div style="font-size: 9px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 4px; font-weight: bold;">🏛️ Bâtiments Classiques</div>
                 <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
