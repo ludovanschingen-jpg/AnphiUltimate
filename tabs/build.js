@@ -1,4 +1,4 @@
-// Builder revision 2026-08-25 — bâtiments actuels + prérequis visuels + recherches + file académie
+// Builder revision 2026-08-25 — bâtiments actuels + prérequis stables + file académie sous la file native
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -61,6 +61,7 @@ function getBuildingData(bid){ return uw.GameData?.buildings?.[bid] || null; }
 function getBuildingName(bid){ return getBuildingData(bid)?.name || NAMES[bid] || bid; }
 function getBuildingMaxLevel(bid){ return Number(getBuildingData(bid)?.max_level ?? BUILDING_MAX_LEVELS[bid] ?? 30); }
 
+// Table de secours complète et prioritaire pour garantir des prérequis infaillibles
 const BUILDING_DEPENDENCY_FALLBACK = {
     main:[], lumber:[], stoner:[], ironer:[], farm:[], storage:[],
     market:[['main',3],['storage',5]],
@@ -80,7 +81,13 @@ const BUILDING_DEPENDENCY_FALLBACK = {
     trade_office:[['main',21],['market',15],['temple',5]]
 };
 
-function normalizeBuildingDependencies(raw){
+function getBuildingDependencies(bid){
+    // Priorité absolue à la table explicite pour une fiabilité totale indépendante des versions du jeu
+    const explicit = BUILDING_DEPENDENCY_FALLBACK[bid];
+    if(explicit && explicit.length > 0) return explicit;
+    
+    const data=getBuildingData(bid);
+    const raw = data?.dependencies || data?.building_dependencies || data?.requirements || data?.prerequisites;
     if(!raw) return [];
     if(Array.isArray(raw)){
         const rows=[];
@@ -88,44 +95,11 @@ function normalizeBuildingDependencies(raw){
             if(Array.isArray(item) && item.length>=2){
                 const id=String(item[0]), lvl=Number(item[1]);
                 if(Number.isFinite(lvl) && lvl>0) rows.push([id,lvl]);
-            }else if(item && typeof item==='object'){
-                const id=item.building||item.id||item.type||item.building_id;
-                const lvl=item.level??item.required_level??item.value;
-                const n=Number(lvl);
-                if(id && Number.isFinite(n) && n>0) rows.push([String(id),n]);
             }
         }
-        return rows.filter(([id])=>NORMAL_BUILDINGS.includes(id)||SPECIAL_LEFT.includes(id)||SPECIAL_RIGHT.includes(id));
-    }
-    if(typeof raw==='object'){
-        const nested=raw.buildings||raw.building||raw.dependencies||raw.requirements||raw.prerequisites;
-        if(nested && nested!==raw){
-            const n=normalizeBuildingDependencies(nested);
-            if(n.length) return n;
-        }
-        return Object.entries(raw)
-            .map(([id,lvl])=>[String(id),Number(typeof lvl==='object' ? (lvl.level??lvl.required_level??lvl.value) : lvl)])
-            .filter(([id,lvl])=>(NORMAL_BUILDINGS.includes(id)||SPECIAL_LEFT.includes(id)||SPECIAL_RIGHT.includes(id))&&Number.isFinite(lvl)&&lvl>0);
+        return rows;
     }
     return [];
-}
-
-function getBuildingDependencies(bid){
-    const data=getBuildingData(bid);
-    const candidates=[
-        data?.dependencies,
-        data?.building_dependencies,
-        data?.requirements,
-        data?.prerequisites,
-        data?.build_dependencies,
-        data?.buildings?.dependencies,
-        data?.construction?.dependencies
-    ];
-    for(const raw of candidates){
-        const deps=normalizeBuildingDependencies(raw);
-        if(deps.length) return deps;
-    }
-    return BUILDING_DEPENDENCY_FALLBACK[bid] || [];
 }
 
 function getResearchData(rid){ return uw.GameData?.researches?.[rid] || null; }
@@ -787,7 +761,7 @@ function injectSenateQueue() {
         $parent.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
     }
     
-    $bt.after(`<div id="autobuild-senate-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px;padding:10px;flex-shrink:0;">
+    $bt.after(`<div id="autobuild-senate-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
             <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Build</span>
             <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${queue.length}</span>
@@ -833,14 +807,33 @@ function injectAcademyQueue() {
     const isAcademy = $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
     if (!isAcademy) return;
 
-    const tid = uw.Game.townId;
-    const rQueue = (buildData.researchQueues && buildData.researchQueues[tid]) || [];
+    // Trouve la file de recherche native de l'Académie pour positionner notre file juste en dessous (.after)
+    let $target = $w.find('.research_order, .research_queue, [class*="research_order"]');
+    if (!$target.length) {
+        $w.find('div, span').each(function() {
+            const txt = uw.$(this).text();
+            if (txt && txt.includes('File de recherche')) {
+                const $box = uw.$(this).closest('.CGameDataQueue, .game_data_queue, div');
+                if ($box.length) {
+                    $target = $box;
+                    return false;
+                }
+            }
+        });
+    }
+    if (!$target || !$target.length) {
+        $target = $w.find('.research_list').first();
+    }
+    if (!$target.length) return;
 
     if ($w.css('overflow') !== 'auto') {
         $w.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
     }
 
-    $w.prepend(`<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px;padding:10px;flex-shrink:0;z-index:100;position:relative;">
+    const tid = uw.Game.townId;
+    const rQueue = (buildData.researchQueues && buildData.researchQueues[tid]) || [];
+
+    $target.after(`<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;z-index:100;position:relative;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
             <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Recherches</span>
             <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${rQueue.length}</span>
@@ -1004,7 +997,11 @@ function initResearchToggleHandlers(){
 }
 
 function initTemplateInputHandlers(){
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{inp.addEventListener('input',()=>refreshTemplatePrerequisites(true));inp.addEventListener('change',()=>refreshTemplatePrerequisites(true));});
+    // Écoute 'change' et 'blur' uniquement pour éviter d'interrompre la frappe dans les champs de niveau
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{
+        inp.addEventListener('change',()=>refreshTemplatePrerequisites(true));
+        inp.addEventListener('blur',()=>refreshTemplatePrerequisites(true));
+    });
 }
 
 function getTemplateSelections(){
@@ -1022,7 +1019,10 @@ function calculateTemplateRequirements(){
     const visiting=new Set();
     function ensureBuildingRequirement(bid,lvl){
         if(!bid||!lvl||(required[bid]||0)>=lvl||visiting.has(bid))return;
-        visiting.add(bid);getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>ensureBuildingRequirement(reqBid,reqLvl));required[bid]=Math.max(required[bid]||0,lvl);visiting.delete(bid);
+        visiting.add(bid);
+        getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>ensureBuildingRequirement(reqBid,reqLvl));
+        required[bid]=Math.max(required[bid]||0,lvl);
+        visiting.delete(bid);
     }
     Object.entries(buildings).forEach(([bid,lvl])=>ensureBuildingRequirement(bid,lvl));
     Object.keys(researches).forEach(rid=>ensureBuildingRequirement('academy',getResearchAcademyLevel(rid)));
@@ -1034,7 +1034,7 @@ function syncBuildingInputsToRequirements(){
     document.querySelectorAll('.tpl-level-input').forEach(inp=>{
         const bid=inp.dataset.bid,required=result.buildings[bid]||0,explicit=parseInt(inp.value)||0;
         const finalLevel=Math.min(Math.max(explicit,required),getBuildingMaxLevel(bid));
-        if(parseInt(inp.value)!==finalLevel)inp.value=finalLevel;
+        if(explicit > 0 && parseInt(inp.value)!==finalLevel) inp.value=finalLevel;
         const isAuto=required>explicit;
         inp.style.borderColor=isAuto?'#66BB6A':'#8B6914';
         inp.title=isAuto?`${getBuildingName(bid)} — requis automatiquement: ${required}`:getBuildingName(bid);
