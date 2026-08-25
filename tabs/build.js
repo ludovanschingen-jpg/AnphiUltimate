@@ -17,14 +17,14 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Coordonnées 100% décodées et validées (Adieu l'obélisque, bonjour les vraies icônes)
+    // Coordonnées 100% décodées et validées (Permutation Remparts et Comptoir effectuée)
     const SPRITES = { 
         main: [450, 0], lumber: [400, 0], stoner: [200, 50], ironer: [50, 50], 
         storage: [0, 0], farm: [150, 0], barracks: [100, 0], docks: [50, 0], 
-        wall: [450, 50], academy: [250, 50], temple: [250, 0], market: [0, 50], 
+        wall: [0, 100], academy: [250, 50], temple: [250, 0], market: [0, 50], 
         hide: [200, 0], 
         theater: [350, 50], thermal: [400, 50], library: [300, 0], lighthouse: [350, 0], 
-        tower: [300, 50], statue: [150, 50], oracle: [50, 100], trade_office: [0, 100] 
+        tower: [300, 50], statue: [150, 50], oracle: [50, 100], trade_office: [450, 50] 
     };
 
     const FR_TO_ID = { 
