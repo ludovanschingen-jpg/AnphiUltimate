@@ -1,3 +1,4 @@
+// Builder revision 2026-08-25 — bâtiments actuels + prérequis visuels + recherches
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -43,6 +44,25 @@ const BUILDING_MAX_LEVELS = {
     theater: 1, thermal: 1, library: 1, lighthouse: 1, tower: 1, statue: 1, oracle: 1, trade_office: 1
 };
 
+// Recherches de l'Académie (arbre actuel). Le niveau d'Académie est le prérequis structurel
+// utilisé par le builder pour préparer automatiquement la ville avant une recherche.
+const RESEARCHES = {
+    slinger:{name:'Lanceur',academy:1}, archer:{name:'Archer',academy:1}, town_guard:{name:'Garde de la ville',academy:1}, hoplite:{name:'Hoplite',academy:1},
+    diplomacy:{name:'Diplomatie',academy:4}, meteorology:{name:'Météorologie',academy:4},
+    espionage:{name:'Espionnage',academy:7}, booty:{name:'Butin',academy:7}, pottery:{name:'Céramique',academy:7},
+    rider:{name:'Cavalerie',academy:10}, architecture:{name:'Architecture',academy:10}, instructor:{name:'Instructeur',academy:10},
+    colonize_ship:{name:'Navire de colonisation',academy:13}, bireme:{name:'Birème',academy:13}, building_crane:{name:'Grue',academy:13}, shipwright:{name:'Charpentier de marine',academy:13},
+    chariot:{name:'Chars',academy:16}, light_ship:{name:'Navire léger',academy:16}, conscription:{name:'Conscription',academy:16}, fire_ship:{name:'Navire incendiaire',academy:16},
+    catapult:{name:'Catapulte',academy:19}, cryptography:{name:'Cryptographie',academy:19}, democracy:{name:'Démocratie',academy:19}, small_transporter:{name:'Transport rapide',academy:19},
+    plow:{name:'Charrue',academy:22}, berth:{name:'Couchage',academy:22}, trireme:{name:'Trière',academy:22},
+    phalanx:{name:'Phalange',academy:25}, breach:{name:'Percée',academy:25}, mathematics:{name:'Mathématiques',academy:25}, ram:{name:'Bélier',academy:25},
+    cartography:{name:'Cartographie',academy:28}, take_over:{name:'Conquête',academy:28},
+    stone_storm:{name:'Grêle de pierres',academy:31}, temple_looting:{name:'Pillage du temple',academy:31}, divine_selection:{name:'Sélection divine',academy:31},
+    combat_experience:{name:'Expérience de combat',academy:34}, strong_wine:{name:'Vin corsé',academy:34}, set_sail:{name:'Mettre les voiles',academy:34}
+};
+const RESEARCH_IDS = Object.keys(RESEARCHES);
+const RESEARCH_KEY_PREFIX = 'research:';
+
 // Prerequis de construction de chaque batiment (source : wiki.fr.grepolis.com/wiki/Batiments + support.innogames.com)
 // Format : [ [batiment_requis, niveau_requis], ... ]
 // Ces prerequis ne conditionnent que le DEMARRAGE du batiment (niveau 1) ; une fois construit, on peut monter les niveaux librement.
@@ -76,6 +96,7 @@ let buildData = {
     settings: { interval: 2, webhook: '' },
     stats: { built: 0, gratisClaimed: 0 },
     queues: {},
+    researchQueues: {},
     templates: {},
     nextCheckTime: 0
 };
@@ -133,23 +154,31 @@ module.render = function(container) {
                     Choisissez les niveaux voulus pour chaque batiment, enregistrez le plan comme template, puis appliquez-le a n'importe quelle ville : la file sera remplie automatiquement avec tous les prerequis necessaires.
                 </div>
 
-                <div id="tpl-normal-grid" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; padding:10px; background:rgba(0,0,0,0.2); border-radius:6px;">
+                <div id="tpl-normal-grid" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; padding:10px; background:rgba(0,0,0,0.2); border-radius:6px;">
                     ${NORMAL_BUILDINGS.map(renderNormalBuildingCell).join('')}
                 </div>
 
-                <div style="display:flex; gap:10px; margin-bottom:14px;">
+                <div style="display:flex; gap:10px; margin-bottom:12px;">
                     <div style="flex:1; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">
-                        <div style="font-size:10px; color:#D4AF37; text-align:center; margin-bottom:8px; font-family:Cinzel,serif;">Speciaux — Emplacement Gauche</div>
-                        <div id="tpl-special-left" style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
-                            ${SPECIAL_LEFT.map(renderSpecialCell).join('')}
-                        </div>
+                        <div style="font-size:10px;color:#D4AF37;text-align:center;margin-bottom:8px;font-family:Cinzel,serif;">Speciaux — Emplacement Gauche</div>
+                        <div id="tpl-special-left" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">${SPECIAL_LEFT.map(renderSpecialCell).join('')}</div>
                     </div>
                     <div style="flex:1; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">
-                        <div style="font-size:10px; color:#D4AF37; text-align:center; margin-bottom:8px; font-family:Cinzel,serif;">Speciaux — Emplacement Droite</div>
-                        <div id="tpl-special-right" style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
-                            ${SPECIAL_RIGHT.map(renderSpecialCell).join('')}
-                        </div>
+                        <div style="font-size:10px;color:#D4AF37;text-align:center;margin-bottom:8px;font-family:Cinzel,serif;">Speciaux — Emplacement Droite</div>
+                        <div id="tpl-special-right" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">${SPECIAL_RIGHT.map(renderSpecialCell).join('')}</div>
                     </div>
+                </div>
+
+                <div style="padding:8px;margin-bottom:12px;background:rgba(0,0,0,0.2);border-radius:6px;border:1px solid rgba(212,175,55,0.2);">
+                    <div style="font-size:10px;color:#D4AF37;text-align:center;margin-bottom:8px;font-family:Cinzel,serif;">Recherches — Académie</div>
+                    <div id="tpl-research-grid" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-height:230px;overflow-y:auto;">
+                        ${RESEARCH_IDS.map(renderResearchCell).join('')}
+                    </div>
+                </div>
+
+                <div id="tpl-prereq-preview" style="padding:8px;margin-bottom:12px;background:linear-gradient(180deg,rgba(212,175,55,0.08),rgba(0,0,0,0.22));border:1px solid rgba(212,175,55,0.35);border-radius:6px;">
+                    <div style="font-size:10px;color:#FFD700;margin-bottom:7px;font-family:Cinzel,serif;">Prérequis calculés automatiquement</div>
+                    <div id="tpl-prereq-list" style="display:flex;flex-direction:column;gap:4px;"><div style="font-size:10px;color:#8B8B83;font-style:italic;">Sélectionnez un bâtiment ou une recherche.</div></div>
                 </div>
 
                 <div style="display:flex; gap:6px; margin-bottom:8px;">
@@ -246,25 +275,30 @@ module.render = function(container) {
 };
 
 function renderNormalBuildingCell(bid) {
-    const sp = SPRITES[bid] || [0, 0];
+    const sp = SPRITES[bid] || [0,0];
     const max = BUILDING_MAX_LEVELS[bid] || 30;
-    return `<div style="width:64px; text-align:center;">
-        <div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;margin:0 auto;">
+    return `<div style="width:56px;text-align:center;">
+        <div title="${NAMES[bid]}" style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;margin:0 auto;">
             <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;"></div>
         </div>
-        <div style="font-size:9px;color:#D4AF37;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${NAMES[bid]}</div>
-        <input type="number" class="tpl-level-input" data-bid="${bid}" min="0" max="${max}" value="0"
-            style="width:48px;background:#1a1a14;border:1px solid #8B6914;color:#FFD700;text-align:center;font-size:11px;border-radius:3px;margin-top:3px;padding:2px 0;">
+        <input type="number" class="tpl-level-input" data-bid="${bid}" min="0" max="${max}" value="0" title="${NAMES[bid]}" style="width:48px;background:#1a1a14;border:1px solid #8B6914;color:#FFD700;text-align:center;font-size:11px;border-radius:3px;margin-top:4px;padding:2px 0;">
     </div>`;
 }
 
 function renderSpecialCell(bid) {
-    const sp = SPRITES[bid] || [0, 0];
-    return `<div class="tpl-special-cell" data-bid="${bid}" data-selected="0" title="${NAMES[bid]}" style="width:58px; text-align:center; cursor:pointer; user-select:none;">
+    const sp = SPRITES[bid] || [0,0];
+    return `<div class="tpl-special-cell" data-bid="${bid}" data-selected="0" title="${NAMES[bid]}" style="width:54px;text-align:center;cursor:pointer;user-select:none;">
         <div class="tpl-special-icon" style="width:50px;height:50px;background:#1a1a14;border:2px solid #4a4a3a;border-radius:4px;margin:0 auto;">
             <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;opacity:0.5;"></div>
         </div>
-        <div style="font-size:9px;color:#BDB76B;margin-top:3px;">${NAMES[bid]}</div>
+    </div>`;
+}
+
+function renderResearchCell(rid) {
+    const r=RESEARCHES[rid];
+    return `<div class="tpl-research-cell" data-rid="${rid}" data-selected="0" title="${r.name} — Académie ${r.academy}" style="width:48px;height:48px;cursor:pointer;user-select:none;position:relative;opacity:0.48;border:2px solid #4a4a3a;border-radius:4px;background:#1a1a14;overflow:hidden;">
+        <div class="research_icon research40x40 ${rid}" style="width:40px;height:40px;margin:2px auto 0;"></div>
+        <span style="position:absolute;right:1px;bottom:1px;background:rgba(0,0,0,0.85);color:#FFD700;font-size:8px;font-weight:bold;padding:1px 3px;border-radius:3px;">${r.academy}</span>
     </div>`;
 }
 
@@ -285,6 +319,7 @@ module.init = function() {
         log('BUILD', 'Intervalle: ' + e.target.value + ' min', 'info');
         if (buildData.enabled) {
             buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
+            processAllResearchQueues();
         }
     };
 
@@ -298,7 +333,10 @@ module.init = function() {
 
     // --- Templates de construction ---
     initSpecialToggleHandlers();
+    initResearchToggleHandlers();
+    initTemplateInputHandlers();
     refreshTemplateSelect();
+    refreshTemplatePrerequisites();
 
     document.getElementById('tpl-save-btn').onclick = saveTemplateFromUI;
     document.getElementById('tpl-delete-btn').onclick = () => {
@@ -321,9 +359,8 @@ module.init = function() {
         if (name && buildData.templates[name]) loadTemplateIntoUI(buildData.templates[name]);
     };
 
-    if (buildData.enabled) {
-        toggleBuild(true);
-    }
+    if (!buildData.researchQueues) buildData.researchQueues = {};
+    if (buildData.enabled) { toggleBuild(true); }
 
     if (buildData.gratisEnabled) {
         toggleGratis(true);
@@ -367,7 +404,7 @@ function toggleBuild(enabled) {
         // jusqu'a ce qu'il n'y ait plus rien a construire ou plus assez de ressources.
         if (fillInterval) clearInterval(fillInterval);
         fillInterval = setInterval(() => {
-            if (buildData.enabled) processAllQueues();
+            if (buildData.enabled) { processAllQueues(); processAllResearchQueues(); }
         }, 20000);
     } else {
         ctrl.classList.add('inactive');
@@ -673,53 +710,96 @@ function updateQueueDisplay() {
 
 function initSpecialToggleHandlers() {
     document.querySelectorAll('.tpl-special-cell').forEach(cell => {
-        cell.onclick = () => {
-            const bid = cell.dataset.bid;
-            const group = SPECIAL_LEFT.includes(bid) ? SPECIAL_LEFT : SPECIAL_RIGHT;
-            const wasSelected = cell.dataset.selected === '1';
-
-            // Deselectionner tous les batiments du meme groupe (un seul possible par emplacement)
-            group.forEach(gid => {
-                const el = document.querySelector(`.tpl-special-cell[data-bid="${gid}"]`);
-                if (!el) return;
-                el.dataset.selected = '0';
-                el.querySelector('.tpl-special-icon').style.borderColor = '#4a4a3a';
-                el.querySelector('.tpl-special-icon div').style.opacity = '0.5';
-            });
-
-            if (!wasSelected) {
-                cell.dataset.selected = '1';
-                cell.querySelector('.tpl-special-icon').style.borderColor = '#FFD700';
-                cell.querySelector('.tpl-special-icon div').style.opacity = '1';
-            }
+        cell.onclick=()=>{
+            const bid=cell.dataset.bid;
+            const group=SPECIAL_LEFT.includes(bid)?SPECIAL_LEFT:SPECIAL_RIGHT;
+            const wasSelected=cell.dataset.selected==='1';
+            group.forEach(gid=>{const el=document.querySelector(`.tpl-special-cell[data-bid="${gid}"]`);if(!el)return;el.dataset.selected='0';el.querySelector('.tpl-special-icon').style.borderColor='#4a4a3a';el.querySelector('.tpl-special-icon div').style.opacity='0.5';});
+            if(!wasSelected){cell.dataset.selected='1';cell.querySelector('.tpl-special-icon').style.borderColor='#FFD700';cell.querySelector('.tpl-special-icon div').style.opacity='1';}
+            refreshTemplatePrerequisites(true);
         };
     });
 }
 
-function collectTemplateFromUI() {
-    const template = {};
-    document.querySelectorAll('.tpl-level-input').forEach(inp => {
-        const bid = inp.dataset.bid;
-        const lvl = parseInt(inp.value) || 0;
-        if (lvl > 0) template[bid] = Math.min(lvl, BUILDING_MAX_LEVELS[bid] || lvl);
+function initResearchToggleHandlers(){
+    document.querySelectorAll('.tpl-research-cell').forEach(cell=>{
+        cell.onclick=()=>{const selected=cell.dataset.selected==='1';cell.dataset.selected=selected?'0':'1';cell.style.opacity=selected?'0.48':'1';cell.style.borderColor=selected?'#4a4a3a':'#FFD700';refreshTemplatePrerequisites(true);};
     });
-    document.querySelectorAll('.tpl-special-cell').forEach(cell => {
-        if (cell.dataset.selected === '1') template[cell.dataset.bid] = 1;
+}
+
+function initTemplateInputHandlers(){
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{inp.addEventListener('input',()=>refreshTemplatePrerequisites(true));inp.addEventListener('change',()=>refreshTemplatePrerequisites(true));});
+}
+
+function getTemplateSelections(){
+    const buildings={};
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{const bid=inp.dataset.bid;const lvl=parseInt(inp.value)||0;if(lvl>0)buildings[bid]=Math.min(lvl,BUILDING_MAX_LEVELS[bid]||lvl);});
+    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{if(cell.dataset.selected==='1')buildings[cell.dataset.bid]=1;});
+    const researches={};
+    document.querySelectorAll('.tpl-research-cell').forEach(cell=>{if(cell.dataset.selected==='1')researches[cell.dataset.rid]=true;});
+    return {buildings,researches};
+}
+
+function calculateTemplateRequirements(){
+    const {buildings,researches}=getTemplateSelections();
+    const required=Object.assign({},buildings);
+    const visiting=new Set();
+    function ensureBuildingRequirement(bid,lvl){
+        if(!bid||!lvl||(required[bid]||0)>=lvl||visiting.has(bid))return;
+        visiting.add(bid);(REQUIREMENTS[bid]||[]).forEach(([reqBid,reqLvl])=>ensureBuildingRequirement(reqBid,reqLvl));required[bid]=Math.max(required[bid]||0,lvl);visiting.delete(bid);
+    }
+    Object.entries(buildings).forEach(([bid,lvl])=>ensureBuildingRequirement(bid,lvl));
+    Object.keys(researches).forEach(rid=>ensureBuildingRequirement('academy',RESEARCHES[rid].academy));
+    return {buildings:required,researches};
+}
+
+function syncBuildingInputsToRequirements(){
+    const result=calculateTemplateRequirements();
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{
+        const bid=inp.dataset.bid,required=result.buildings[bid]||0,explicit=parseInt(inp.value)||0;
+        const finalLevel=Math.min(Math.max(explicit,required),BUILDING_MAX_LEVELS[bid]||99);
+        if(parseInt(inp.value)!==finalLevel)inp.value=finalLevel;
+        const isAuto=required>explicit;
+        inp.style.borderColor=isAuto?'#66BB6A':'#8B6914';
+        inp.title=isAuto?`${NAMES[bid]} — requis automatiquement: ${required}`:NAMES[bid];
     });
+}
+
+function refreshTemplatePrerequisites(autoSync=false){
+    if(autoSync)syncBuildingInputsToRequirements();
+    const list=document.getElementById('tpl-prereq-list');if(!list)return;
+    const result=calculateTemplateRequirements(),selectedResearchIds=Object.keys(result.researches);
+    const currentLevels=getTownBuildingLevels(uw.Game.townId);
+    const rows=Object.entries(result.buildings).filter(([,lvl])=>lvl>0).sort((a,b)=>(a[0]==='academy'?0:1)-(b[0]==='academy'?0:1)||a[0].localeCompare(b[0])).map(([bid,lvl])=>{
+        const current=currentLevels[bid]||0,sp=SPRITES[bid]||[0,0];
+        return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#D4AF37;">
+            <div style="width:32px;height:32px;border:1px solid ${current>=lvl?'#4CAF50':'#8B6914'};border-radius:3px;background:#1a1a14;overflow:hidden;flex-shrink:0;">
+                <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${Math.round(sp[0]*0.64)}px -${Math.round(sp[1]*0.64)}px;background-size:320px 96px;"></div>
+            </div>
+            <span style="min-width:95px;">${NAMES[bid]}</span><strong style="color:${current>=lvl?'#81C784':'#FFD700'};">niv. ${lvl}</strong>
+            <span style="margin-left:auto;color:${current>=lvl?'#81C784':'#BDBDBD'};">${current>=lvl?'OK':`à prévoir: ${lvl}`}</span>
+        </div>`;
+    });
+    const researchRows=selectedResearchIds.map(rid=>{const r=RESEARCHES[rid];return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#D4AF37;">
+        <div class="research_icon research40x40 ${rid}" style="width:32px;height:32px;flex-shrink:0;"></div><span style="min-width:160px;">${r.name}</span><strong style="color:#FFD700;">Académie ${r.academy}</strong><span style="margin-left:auto;color:#BDBDBD;">Recherche sélectionnée</span>
+    </div>`;});
+    if(!rows.length&&!researchRows.length){list.innerHTML='<div style="font-size:10px;color:#8B8B83;font-style:italic;">Sélectionnez un bâtiment ou une recherche.</div>';return;}
+    list.innerHTML=(rows.length?'<div style="font-size:9px;color:#BDB76B;margin-bottom:2px;">Bâtiments nécessaires</div>':'')+rows.join('')+(researchRows.length?'<div style="font-size:9px;color:#BDB76B;margin-top:6px;margin-bottom:2px;">Recherches sélectionnées</div>'+researchRows.join(''):'');
+}
+
+function collectTemplateFromUI(){
+    const template={};
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{const bid=inp.dataset.bid,lvl=parseInt(inp.value)||0;if(lvl>0)template[bid]=Math.min(lvl,BUILDING_MAX_LEVELS[bid]||lvl);});
+    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{if(cell.dataset.selected==='1')template[cell.dataset.bid]=1;});
+    document.querySelectorAll('.tpl-research-cell').forEach(cell=>{if(cell.dataset.selected==='1')template[RESEARCH_KEY_PREFIX+cell.dataset.rid]=1;});
     return template;
 }
 
-function loadTemplateIntoUI(template) {
-    document.querySelectorAll('.tpl-level-input').forEach(inp => {
-        inp.value = template[inp.dataset.bid] || 0;
-    });
-    document.querySelectorAll('.tpl-special-cell').forEach(cell => {
-        const bid = cell.dataset.bid;
-        const selected = !!template[bid];
-        cell.dataset.selected = selected ? '1' : '0';
-        cell.querySelector('.tpl-special-icon').style.borderColor = selected ? '#FFD700' : '#4a4a3a';
-        cell.querySelector('.tpl-special-icon div').style.opacity = selected ? '1' : '0.5';
-    });
+function loadTemplateIntoUI(template){
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>inp.value=template[inp.dataset.bid]||0);
+    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{const bid=cell.dataset.bid,selected=!!template[bid];cell.dataset.selected=selected?'1':'0';cell.querySelector('.tpl-special-icon').style.borderColor=selected?'#FFD700':'#4a4a3a';cell.querySelector('.tpl-special-icon div').style.opacity=selected?'1':'0.5';});
+    document.querySelectorAll('.tpl-research-cell').forEach(cell=>{const key=RESEARCH_KEY_PREFIX+cell.dataset.rid,selected=!!template[key]||!!template[cell.dataset.rid];cell.dataset.selected=selected?'1':'0';cell.style.opacity=selected?'1':'0.48';cell.style.borderColor=selected?'#FFD700':'#4a4a3a';});
+    refreshTemplatePrerequisites(true);
 }
 
 function saveTemplateFromUI() {
@@ -778,71 +858,37 @@ function computeProjectedLevels(tid) {
 // Applique un template a la ville actuellement selectionnee : calcule tous les niveaux
 // manquants (batiment cible + tous ses prerequis en cascade) et les ajoute a la file dans
 // le bon ordre de dependance.
-function applyTemplateToTown(templateName) {
-    const template = buildData.templates[templateName];
-    if (!template) { log('BUILD', `Template "${templateName}" introuvable`, 'error'); return; }
+function getTownResearchState(tid){try{const town=uw.ITowns.getTown(tid);return town&&town.researches?Object.assign({},town.researches().attributes||{}):{};}catch(e){log('BUILD',`Impossible de lire les recherches: ${e.message}`,'error');return {};}}
+function queueResearch(tid,rid){if(!buildData.researchQueues[tid])buildData.researchQueues[tid]=[];if(!buildData.researchQueues[tid].includes(rid))buildData.researchQueues[tid].push(rid);}
+function processAllResearchQueues(){for(const tid in (buildData.researchQueues||{}))if(buildData.researchQueues.hasOwnProperty(tid))processTownResearchQueue(tid);}
+function processTownResearchQueue(tid){
+    const queue=(buildData.researchQueues&&buildData.researchQueues[tid])||[];if(!queue.length)return;const town=uw.ITowns.getTown(tid);if(!town)return;
+    const researched=getTownResearchState(tid);while(queue.length&&researched[queue[0]]===true)queue.shift();if(!queue.length){saveData();return;}
+    const rid=queue[0],r=RESEARCHES[rid],academy=(town.getBuildings&&town.getBuildings().getBuildings())?.academy||0;if(academy<r.academy)return;
+    try{
+        const selectors=[`.research_technology.${rid}`,`.research_icon.${rid}`,`.research.${rid}`,`[data-research-id="${rid}"]`,`[data-research="${rid}"]`];
+        const $candidate=selectors.map(sel=>uw.$(sel+':visible')).find($el=>$el&&$el.length);if(!$candidate||!$candidate.length)return;
+        let $click=$candidate.first();const $parentButton=$candidate.closest('button,.btn,.research_technology,.research');if($parentButton.length)$click=$parentButton.first();$click.click();
+        setTimeout(()=>{if(getTownResearchState(tid)[rid]===true){queue.shift();saveData();updateStats();}},1200);
+    }catch(e){log('BUILD',`${town.getName()}: impossible de lancer ${r.name}: ${e.message}`,'error');}
+}
 
-    const tid = uw.Game.townId;
-    const projected = computeProjectedLevels(tid);
-    const newItems = [];
-    const visiting = new Set();
-    let hadConflict = false;
-
-    const currentLevel = (bid) => projected[bid] || 0;
-
-    function queueLevelUp(bid) {
-        const lvl = currentLevel(bid) + 1;
-        newItems.push({ buildingId: bid, level: lvl });
-        projected[bid] = lvl;
-    }
-
-    function checkExclusiveGroup(bid) {
-        const group = SPECIAL_LEFT.includes(bid) ? SPECIAL_LEFT : (SPECIAL_RIGHT.includes(bid) ? SPECIAL_RIGHT : null);
-        if (!group) return true;
-        const conflict = group.find(other => other !== bid && currentLevel(other) >= 1);
-        if (conflict) {
-            log('BUILD', `Template: ${NAMES[bid]} ignore - ${NAMES[conflict]} occupe deja cet emplacement special`, 'error');
-            hadConflict = true;
-            return false;
-        }
-        return true;
-    }
-
-    function ensureLevel(bid, targetLevel) {
-        if (currentLevel(bid) >= targetLevel) return;
-        if (currentLevel(bid) < 1) {
-            if (visiting.has(bid)) return; // securite anti-boucle
-            visiting.add(bid);
-            if (!checkExclusiveGroup(bid)) { visiting.delete(bid); return; }
-            (REQUIREMENTS[bid] || []).forEach(([reqBid, reqLvl]) => ensureLevel(reqBid, reqLvl));
-            if (currentLevel(bid) < 1) queueLevelUp(bid);
-            visiting.delete(bid);
-        }
-        while (currentLevel(bid) < targetLevel) {
-            queueLevelUp(bid);
-        }
-    }
-
-    Object.keys(template).forEach(bid => {
-        const targetLevel = template[bid];
-        if (!targetLevel || targetLevel <= 0) return;
-        ensureLevel(bid, targetLevel);
-    });
-
-    if (newItems.length === 0) {
-        log('BUILD', hadConflict ? 'Template: rien ajoute (conflit d\'emplacement special)' : 'Template: rien a ajouter, niveaux deja atteints', 'info');
-        return;
-    }
-
-    if (!buildData.queues[tid]) buildData.queues[tid] = [];
-    buildData.queues[tid].push(...newItems);
-    saveData();
-    refreshSenateQueue();
-    updateStats();
-    updateQueueDisplay();
-    log('BUILD', `Template "${templateName}" applique: ${newItems.length} construction(s) ajoutee(s) a la file (prerequis inclus)`, 'success');
-
-    if (buildData.enabled) processTownQueue(tid);
+function applyTemplateToTown(templateName){
+    const template=buildData.templates[templateName];if(!template){log('BUILD',`Template "${templateName}" introuvable`,'error');return;}
+    const tid=uw.Game.townId,projected=computeProjectedLevels(tid),newItems=[],visiting=new Set();let hadConflict=false;if(!buildData.researchQueues)buildData.researchQueues={};
+    const currentLevel=bid=>projected[bid]||0;
+    function queueLevelUp(bid){const lvl=currentLevel(bid)+1;newItems.push({buildingId:bid,level:lvl});projected[bid]=lvl;}
+    function checkExclusiveGroup(bid){const group=SPECIAL_LEFT.includes(bid)?SPECIAL_LEFT:(SPECIAL_RIGHT.includes(bid)?SPECIAL_RIGHT:null);if(!group)return true;const conflict=group.find(other=>other!==bid&&currentLevel(other)>=1);if(conflict){log('BUILD',`Template: ${NAMES[bid]} ignore - ${NAMES[conflict]} occupe deja cet emplacement special`,'error');hadConflict=true;return false;}return true;}
+    function ensureLevel(bid,target){if(currentLevel(bid)>=target)return;if(currentLevel(bid)<1){if(visiting.has(bid))return;visiting.add(bid);if(!checkExclusiveGroup(bid)){visiting.delete(bid);return;}(REQUIREMENTS[bid]||[]).forEach(([reqBid,reqLvl])=>ensureLevel(reqBid,reqLvl));if(currentLevel(bid)<1)queueLevelUp(bid);visiting.delete(bid);}while(currentLevel(bid)<target)queueLevelUp(bid);}
+    Object.keys(template).forEach(key=>{if(key.startsWith(RESEARCH_KEY_PREFIX))return;const target=template[key];if(target>0&&BUILDING_MAX_LEVELS[key])ensureLevel(key,target);});
+    const requested=Object.keys(template).filter(k=>k.startsWith(RESEARCH_KEY_PREFIX)).map(k=>k.slice(RESEARCH_KEY_PREFIX.length)).filter(rid=>RESEARCHES[rid]);
+    const researchState=getTownResearchState(tid);requested.forEach(rid=>{if(researchState[rid]!==true){ensureLevel('academy',RESEARCHES[rid].academy);queueResearch(tid,rid);}});
+    if(newItems.length){if(!buildData.queues[tid])buildData.queues[tid]=[];buildData.queues[tid].push(...newItems);}
+    saveData();refreshSenateQueue();updateStats();updateQueueDisplay();
+    const parts=[];if(newItems.length)parts.push(`${newItems.length} construction(s)`);if(requested.length)parts.push(`${requested.length} recherche(s)`);
+    if(!parts.length){log('BUILD',hadConflict?"Template: rien ajoute (conflit d'emplacement special)":'Template: rien a ajouter, niveaux/recherches deja atteints','info');return;}
+    log('BUILD',`Template "${templateName}" applique: ${parts.join(' + ')} (prerequis inclus)`,'success');
+    if(buildData.enabled){processTownQueue(tid);processTownResearchQueue(tid);}
 }
 
 // ============================================================================
@@ -861,6 +907,7 @@ function startTimer() {
         if (diff <= 0) {
             processAllQueues();
             buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
+            processAllResearchQueues();
         }
         
         const m = Math.max(0, Math.floor(diff / 60000)).toString().padStart(2, '0');
@@ -875,7 +922,7 @@ function updateStats() {
     const g = document.getElementById('build-stat-gratis');
     
     if (b) b.textContent = buildData.stats.built;
-    if (q) q.textContent = Object.values(buildData.queues).reduce((a, queue) => a + queue.length, 0);
+    if (q) { const a=Object.values(buildData.queues).reduce((x,q)=>x+q.length,0); const r=Object.values(buildData.researchQueues||{}).reduce((x,q)=>x+q.length,0); q.textContent=a+r; }
     if (g) g.textContent = buildData.stats.gratisClaimed;
 }
 
@@ -886,6 +933,7 @@ function saveData() {
         settings: buildData.settings,
         stats: buildData.stats,
         queues: buildData.queues,
+        researchQueues: buildData.researchQueues || {},
         templates: buildData.templates
     }));
 }
@@ -897,6 +945,8 @@ function loadData() {
             const d = JSON.parse(saved);
             buildData = { ...buildData, ...d };
             if (!buildData.templates) buildData.templates = {};
+            if (!buildData.researchQueues) buildData.researchQueues = {};
+            Object.values(buildData.templates).forEach(t=>Object.keys(t||{}).forEach(k=>{if(RESEARCHES[k]&&!k.startsWith(RESEARCH_KEY_PREFIX)){t[RESEARCH_KEY_PREFIX+k]=t[k];delete t[k];}}));
         } catch(e) {}
     }
 }
