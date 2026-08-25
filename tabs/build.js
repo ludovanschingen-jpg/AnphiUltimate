@@ -1,4 +1,4 @@
-// Builder revision 2026-08-25 — File Auto Recherches corrigée (ciblage strict de l'Académie)
+// Builder revision 2026-08-25 — File Auto Recherches (Design Sénat + Emplacement parfait)
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -793,19 +793,20 @@ function refreshSenateQueue() {
 }
 
 function injectAcademyQueue() {
+    // Si la file existe déjà, on la met juste à jour
     if (uw.$('#autobuild-academy-queue').length) {
         refreshAcademyQueue();
         return;
     }
 
-    // ON CIBLE EXCLUSIVEMENT L'ACADÉMIE : on filtre toutes les fenêtres ouvertes pour ne garder QUE celle des recherches
+    // 1. On trouve la bonne fenêtre (Académie)
     const $w = uw.$('.gpwindow_content:visible').filter(function() {
         return uw.$(this).find('.research_list, .research_technology').length > 0;
     }).first();
 
-    if (!$w.length) return; // Si l'académie n'est pas ouverte, on arrête tout de suite
+    if (!$w.length) return;
 
-    // On cherche la file native de l'Académie
+    // 2. On cible précisément la file de recherche native du jeu
     let $target = $w.find('.game_data_queue, .CGameDataQueue').first();
 
     if (!$target.length) {
@@ -821,34 +822,24 @@ function injectAcademyQueue() {
         });
     }
 
-    // Fallback : au pire, on se met à la fin du grand bloc
+    // Sécurité si on ne trouve vraiment pas la file native, on se met sous la liste
     if (!$target.length) {
         $target = $w.find('.research_list, .left_side').first();
     }
-
     if (!$target.length) return;
 
-    if ($w.css('overflow') !== 'auto') {
-        $w.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
-    }
-
+    // 3. On récupère la file d'attente des recherches
     const tid = uw.Game.townId;
     const rQueue = (buildData.researchQueues && buildData.researchQueues[tid]) || [];
 
-    const queueHtml = `<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:15px auto 10px auto;width:95%;padding:10px;flex-shrink:0;z-index:100;position:relative;clear:both;box-sizing:border-box;">
+    // 4. TON CODE EXACT (adapté pour les recherches) injecté juste en dessous de la file native
+    $target.after(`<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
             <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Recherches</span>
             <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${rQueue.length}</span>
         </div>
         <div class="research-queue-items" style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;"></div>
-    </div>`;
-
-    // On l'injecte JUSTE EN DESSOUS de la file de l'Académie
-    if ($target.length) {
-        $target.after(queueHtml);
-    } else {
-        $w.append(queueHtml);
-    }
+    </div>`);
     
     refreshAcademyQueue();
 }
