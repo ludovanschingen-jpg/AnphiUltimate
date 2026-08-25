@@ -30,17 +30,59 @@ const FR_TO_ID = {
     'theatre': 'theater', 'théâtre': 'theater'
 };
 
+// Batiments "normaux" (une seule case, pas de groupe exclusif)
+const NORMAL_BUILDINGS = ['main', 'lumber', 'farm', 'stoner', 'storage', 'ironer', 'barracks', 'temple', 'market', 'docks', 'academy', 'wall', 'hide'];
+// Les deux groupes de batiments speciaux : un seul batiment par groupe peut etre construit dans une ville
+const SPECIAL_LEFT = ['theater', 'thermal', 'library', 'lighthouse'];
+const SPECIAL_RIGHT = ['tower', 'statue', 'oracle', 'trade_office'];
+
+// Niveaux maximum de chaque batiment (mondes recents / Achille-Bellerophon)
+const BUILDING_MAX_LEVELS = {
+    main: 25, lumber: 40, farm: 45, stoner: 40, storage: 35, ironer: 40,
+    barracks: 30, temple: 30, market: 30, docks: 30, academy: 36, wall: 25, hide: 10,
+    theater: 1, thermal: 1, library: 1, lighthouse: 1, tower: 1, statue: 1, oracle: 1, trade_office: 1
+};
+
+// Prerequis de construction de chaque batiment (source : wiki.fr.grepolis.com/wiki/Batiments + support.innogames.com)
+// Format : [ [batiment_requis, niveau_requis], ... ]
+// Ces prerequis ne conditionnent que le DEMARRAGE du batiment (niveau 1) ; une fois construit, on peut monter les niveaux librement.
+const REQUIREMENTS = {
+    main: [],
+    lumber: [],
+    stoner: [],
+    ironer: [],
+    farm: [],
+    storage: [],
+    market: [['main', 3], ['storage', 5]],
+    barracks: [['ironer', 1], ['main', 2], ['farm', 3], ['lumber', 1]],
+    temple: [['stoner', 1]],
+    docks: [['main', 14], ['lumber', 15], ['ironer', 10]],
+    academy: [['main', 8], ['farm', 6], ['barracks', 5]],
+    wall: [['main', 5], ['temple', 3]],
+    hide: [['main', 10], ['storage', 7], ['market', 4]],
+    theater: [['main', 24], ['lumber', 35], ['ironer', 32], ['docks', 5], ['academy', 5]],
+    thermal: [['main', 24], ['farm', 35], ['docks', 5], ['academy', 5]],
+    library: [['main', 24], ['academy', 20], ['docks', 5]],
+    lighthouse: [['main', 24], ['docks', 20], ['academy', 5]],
+    tower: [['main', 21], ['wall', 20], ['temple', 5], ['market', 5]],
+    statue: [['main', 21], ['temple', 12], ['market', 5]],
+    oracle: [['main', 21], ['hide', 10], ['temple', 5], ['market', 5]],
+    trade_office: [['main', 21], ['market', 15], ['temple', 5]]
+};
+
 let buildData = {
     enabled: false,
     gratisEnabled: false,
     settings: { interval: 2, webhook: '' },
     stats: { built: 0, gratisClaimed: 0 },
     queues: {},
+    templates: {},
     nextCheckTime: 0
 };
 
 let senateWatcherInterval = null;
 let gratisInterval = null;
+let fillInterval = null;
 
 module.render = function(container) {
     container.innerHTML = `
@@ -77,6 +119,61 @@ module.render = function(container) {
                     • Termine instantanément les constructions de moins de 5 minutes<br>
                     • Fonctionne uniquement quand le bouton est disponible<br>
                     • Gratuit et sans limite d'utilisation
+                </div>
+            </div>
+        </div>
+
+        <div class="bot-section">
+            <div class="section-header">
+                <div class="section-title"><span>🏛️</span> Templates de construction</div>
+                <span class="section-toggle">▼</span>
+            </div>
+            <div class="section-content">
+                <div style="font-size: 11px; color: #BDB76B; margin-bottom: 10px;">
+                    Choisissez les niveaux voulus pour chaque batiment, enregistrez le plan comme template, puis appliquez-le a n'importe quelle ville : la file sera remplie automatiquement avec tous les prerequis necessaires.
+                </div>
+
+                <div id="tpl-normal-grid" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; padding:10px; background:rgba(0,0,0,0.2); border-radius:6px;">
+                    ${NORMAL_BUILDINGS.map(renderNormalBuildingCell).join('')}
+                </div>
+
+                <div style="display:flex; gap:10px; margin-bottom:14px;">
+                    <div style="flex:1; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">
+                        <div style="font-size:10px; color:#D4AF37; text-align:center; margin-bottom:8px; font-family:Cinzel,serif;">Speciaux — Emplacement Gauche</div>
+                        <div id="tpl-special-left" style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+                            ${SPECIAL_LEFT.map(renderSpecialCell).join('')}
+                        </div>
+                    </div>
+                    <div style="flex:1; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">
+                        <div style="font-size:10px; color:#D4AF37; text-align:center; margin-bottom:8px; font-family:Cinzel,serif;">Speciaux — Emplacement Droite</div>
+                        <div id="tpl-special-right" style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+                            ${SPECIAL_RIGHT.map(renderSpecialCell).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:6px; margin-bottom:8px;">
+                    <input type="text" id="tpl-name-input" placeholder="Nom du template" maxlength="40"
+                        style="flex:1; background:#1a1a14; border:1px solid #8B6914; color:#FFD700; padding:7px; border-radius:4px; font-size:12px;">
+                    <button id="tpl-save-btn"
+                        style="background:linear-gradient(145deg,#D4AF37,#8B6914); border:1px solid #FFD700; color:#1a1408; font-weight:bold; padding:7px 14px; border-radius:4px; cursor:pointer; font-size:11px; white-space:nowrap;">
+                        💾 Enregistrer
+                    </button>
+                </div>
+
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <select id="tpl-select"
+                        style="flex:1; background:#1a1a14; border:1px solid #8B6914; color:#FFD700; padding:7px; border-radius:4px; font-size:12px;">
+                        <option value="">-- Choisir un template --</option>
+                    </select>
+                    <button id="tpl-apply-btn"
+                        style="background:linear-gradient(145deg,#81C784,#4a7a4a); border:1px solid #A5D6A7; color:#0d1f0d; font-weight:bold; padding:7px 12px; border-radius:4px; cursor:pointer; font-size:11px; white-space:nowrap;">
+                        ✅ Appliquer a cette ville
+                    </button>
+                    <button id="tpl-delete-btn" title="Supprimer le template"
+                        style="background:linear-gradient(145deg,#E57373,#8B3A3A); border:1px solid #FFCDD2; color:#2a0d0d; font-weight:bold; padding:7px 10px; border-radius:4px; cursor:pointer; font-size:11px;">
+                        🗑️
+                    </button>
                 </div>
             </div>
         </div>
@@ -148,6 +245,29 @@ module.render = function(container) {
     `;
 };
 
+function renderNormalBuildingCell(bid) {
+    const sp = SPRITES[bid] || [0, 0];
+    const max = BUILDING_MAX_LEVELS[bid] || 30;
+    return `<div style="width:64px; text-align:center;">
+        <div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;margin:0 auto;">
+            <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;"></div>
+        </div>
+        <div style="font-size:9px;color:#D4AF37;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${NAMES[bid]}</div>
+        <input type="number" class="tpl-level-input" data-bid="${bid}" min="0" max="${max}" value="0"
+            style="width:48px;background:#1a1a14;border:1px solid #8B6914;color:#FFD700;text-align:center;font-size:11px;border-radius:3px;margin-top:3px;padding:2px 0;">
+    </div>`;
+}
+
+function renderSpecialCell(bid) {
+    const sp = SPRITES[bid] || [0, 0];
+    return `<div class="tpl-special-cell" data-bid="${bid}" data-selected="0" title="${NAMES[bid]}" style="width:58px; text-align:center; cursor:pointer; user-select:none;">
+        <div class="tpl-special-icon" style="width:50px;height:50px;background:#1a1a14;border:2px solid #4a4a3a;border-radius:4px;margin:0 auto;">
+            <div style="width:100%;height:100%;background:url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px;background-size:500px 150px;opacity:0.5;"></div>
+        </div>
+        <div style="font-size:9px;color:#BDB76B;margin-top:3px;">${NAMES[bid]}</div>
+    </div>`;
+}
+
 module.init = function() {
     loadData();
     
@@ -176,6 +296,31 @@ module.init = function() {
         };
     });
 
+    // --- Templates de construction ---
+    initSpecialToggleHandlers();
+    refreshTemplateSelect();
+
+    document.getElementById('tpl-save-btn').onclick = saveTemplateFromUI;
+    document.getElementById('tpl-delete-btn').onclick = () => {
+        const sel = document.getElementById('tpl-select');
+        const name = sel.value;
+        if (!name) { log('BUILD', 'Selectionnez un template a supprimer', 'error'); return; }
+        delete buildData.templates[name];
+        saveData();
+        refreshTemplateSelect();
+        log('BUILD', `Template "${name}" supprime`, 'info');
+    };
+    document.getElementById('tpl-apply-btn').onclick = () => {
+        const sel = document.getElementById('tpl-select');
+        const name = sel.value;
+        if (!name) { log('BUILD', 'Selectionnez un template a appliquer', 'error'); return; }
+        applyTemplateToTown(name);
+    };
+    document.getElementById('tpl-select').onchange = (e) => {
+        const name = e.target.value;
+        if (name && buildData.templates[name]) loadTemplateIntoUI(buildData.templates[name]);
+    };
+
     if (buildData.enabled) {
         toggleBuild(true);
     }
@@ -202,6 +347,7 @@ module.isActive = function() {
 module.onActivate = function(container) {
     updateStats();
     updateQueueDisplay();
+    refreshTemplateSelect(document.getElementById('tpl-select') ? document.getElementById('tpl-select').value : undefined);
 };
 
 function toggleBuild(enabled) {
@@ -215,10 +361,22 @@ function toggleBuild(enabled) {
         log('BUILD', 'Bot demarre', 'success');
         buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
         processAllQueues();
+
+        // Remplissage continu : tant que le bot est actif, on retente regulierement de
+        // remplir la file de construction (nouveaux emplacements libres, ressources reconstituees...)
+        // jusqu'a ce qu'il n'y ait plus rien a construire ou plus assez de ressources.
+        if (fillInterval) clearInterval(fillInterval);
+        fillInterval = setInterval(() => {
+            if (buildData.enabled) processAllQueues();
+        }, 20000);
     } else {
         ctrl.classList.add('inactive');
         status.textContent = 'En attente';
         log('BUILD', 'Bot arrete', 'info');
+        if (fillInterval) {
+            clearInterval(fillInterval);
+            fillInterval = null;
+        }
     }
     
     saveData();
@@ -355,8 +513,12 @@ async function processTownQueue(tid) {
             uw.$('.ab-btn').remove();
         }
 
+        // Continue immediatement a remplir la file (jusqu'a epuisement des emplacements/ressources)
         setTimeout(() => processTownQueue(tid), 1000);
-    }, () => {});
+    }, () => {
+        // Echec (ressources insuffisantes, prerequis manquant, etc.) : on laisse l'item en file,
+        // le prochain cycle de remplissage (fillInterval / timer) retentera automatiquement.
+    });
 }
 
 function addToQueue(bid, lvl) {
@@ -369,6 +531,7 @@ function addToQueue(bid, lvl) {
     updateStats();
     updateQueueDisplay();
     uw.$('.ab-btn').remove();
+    if (buildData.enabled) processTownQueue(tid);
 }
 
 function removeFromQueue(idx) {
@@ -504,6 +667,186 @@ function updateQueueDisplay() {
     }
 }
 
+// ============================================================================
+// TEMPLATES DE CONSTRUCTION
+// ============================================================================
+
+function initSpecialToggleHandlers() {
+    document.querySelectorAll('.tpl-special-cell').forEach(cell => {
+        cell.onclick = () => {
+            const bid = cell.dataset.bid;
+            const group = SPECIAL_LEFT.includes(bid) ? SPECIAL_LEFT : SPECIAL_RIGHT;
+            const wasSelected = cell.dataset.selected === '1';
+
+            // Deselectionner tous les batiments du meme groupe (un seul possible par emplacement)
+            group.forEach(gid => {
+                const el = document.querySelector(`.tpl-special-cell[data-bid="${gid}"]`);
+                if (!el) return;
+                el.dataset.selected = '0';
+                el.querySelector('.tpl-special-icon').style.borderColor = '#4a4a3a';
+                el.querySelector('.tpl-special-icon div').style.opacity = '0.5';
+            });
+
+            if (!wasSelected) {
+                cell.dataset.selected = '1';
+                cell.querySelector('.tpl-special-icon').style.borderColor = '#FFD700';
+                cell.querySelector('.tpl-special-icon div').style.opacity = '1';
+            }
+        };
+    });
+}
+
+function collectTemplateFromUI() {
+    const template = {};
+    document.querySelectorAll('.tpl-level-input').forEach(inp => {
+        const bid = inp.dataset.bid;
+        const lvl = parseInt(inp.value) || 0;
+        if (lvl > 0) template[bid] = Math.min(lvl, BUILDING_MAX_LEVELS[bid] || lvl);
+    });
+    document.querySelectorAll('.tpl-special-cell').forEach(cell => {
+        if (cell.dataset.selected === '1') template[cell.dataset.bid] = 1;
+    });
+    return template;
+}
+
+function loadTemplateIntoUI(template) {
+    document.querySelectorAll('.tpl-level-input').forEach(inp => {
+        inp.value = template[inp.dataset.bid] || 0;
+    });
+    document.querySelectorAll('.tpl-special-cell').forEach(cell => {
+        const bid = cell.dataset.bid;
+        const selected = !!template[bid];
+        cell.dataset.selected = selected ? '1' : '0';
+        cell.querySelector('.tpl-special-icon').style.borderColor = selected ? '#FFD700' : '#4a4a3a';
+        cell.querySelector('.tpl-special-icon div').style.opacity = selected ? '1' : '0.5';
+    });
+}
+
+function saveTemplateFromUI() {
+    const nameInput = document.getElementById('tpl-name-input');
+    const name = nameInput.value.trim();
+    if (!name) { log('BUILD', 'Entrez un nom pour le template', 'error'); return; }
+
+    const template = collectTemplateFromUI();
+    if (Object.keys(template).length === 0) { log('BUILD', 'Le template est vide', 'error'); return; }
+
+    buildData.templates[name] = template;
+    saveData();
+    refreshTemplateSelect(name);
+    log('BUILD', `Template "${name}" enregistre (${Object.keys(template).length} batiments)`, 'success');
+}
+
+function refreshTemplateSelect(selectName) {
+    const sel = document.getElementById('tpl-select');
+    if (!sel) return;
+    const names = Object.keys(buildData.templates || {});
+    sel.innerHTML = '<option value="">-- Choisir un template --</option>' +
+        names.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
+    if (selectName && names.includes(selectName)) sel.value = selectName;
+}
+
+// Lit les niveaux actuels des batiments d'une ville via l'API du jeu.
+function getTownBuildingLevels(tid) {
+    try {
+        const town = uw.ITowns.getTown(tid);
+        if (!town || !town.getBuildings) return {};
+        return Object.assign({}, town.getBuildings().getBuildings());
+    } catch (e) {
+        log('BUILD', `Impossible de lire les niveaux de batiments: ${e.message}`, 'error');
+        return {};
+    }
+}
+
+// Calcule les niveaux "projetes" d'une ville : niveau reel + constructions en cours + file auto-build.
+function computeProjectedLevels(tid) {
+    const levels = getTownBuildingLevels(tid);
+    try {
+        const town = uw.ITowns.getTown(tid);
+        if (town) {
+            town.buildingOrders().forEach(o => {
+                const bid = (typeof o.getBuildingId === 'function') ? o.getBuildingId() : o.attributes.building_id;
+                levels[bid] = (levels[bid] || 0) + 1;
+            });
+        }
+    } catch (e) {}
+    (buildData.queues[tid] || []).forEach(it => {
+        levels[it.buildingId] = (levels[it.buildingId] || 0) + 1;
+    });
+    return levels;
+}
+
+// Applique un template a la ville actuellement selectionnee : calcule tous les niveaux
+// manquants (batiment cible + tous ses prerequis en cascade) et les ajoute a la file dans
+// le bon ordre de dependance.
+function applyTemplateToTown(templateName) {
+    const template = buildData.templates[templateName];
+    if (!template) { log('BUILD', `Template "${templateName}" introuvable`, 'error'); return; }
+
+    const tid = uw.Game.townId;
+    const projected = computeProjectedLevels(tid);
+    const newItems = [];
+    const visiting = new Set();
+    let hadConflict = false;
+
+    const currentLevel = (bid) => projected[bid] || 0;
+
+    function queueLevelUp(bid) {
+        const lvl = currentLevel(bid) + 1;
+        newItems.push({ buildingId: bid, level: lvl });
+        projected[bid] = lvl;
+    }
+
+    function checkExclusiveGroup(bid) {
+        const group = SPECIAL_LEFT.includes(bid) ? SPECIAL_LEFT : (SPECIAL_RIGHT.includes(bid) ? SPECIAL_RIGHT : null);
+        if (!group) return true;
+        const conflict = group.find(other => other !== bid && currentLevel(other) >= 1);
+        if (conflict) {
+            log('BUILD', `Template: ${NAMES[bid]} ignore - ${NAMES[conflict]} occupe deja cet emplacement special`, 'error');
+            hadConflict = true;
+            return false;
+        }
+        return true;
+    }
+
+    function ensureLevel(bid, targetLevel) {
+        if (currentLevel(bid) >= targetLevel) return;
+        if (currentLevel(bid) < 1) {
+            if (visiting.has(bid)) return; // securite anti-boucle
+            visiting.add(bid);
+            if (!checkExclusiveGroup(bid)) { visiting.delete(bid); return; }
+            (REQUIREMENTS[bid] || []).forEach(([reqBid, reqLvl]) => ensureLevel(reqBid, reqLvl));
+            if (currentLevel(bid) < 1) queueLevelUp(bid);
+            visiting.delete(bid);
+        }
+        while (currentLevel(bid) < targetLevel) {
+            queueLevelUp(bid);
+        }
+    }
+
+    Object.keys(template).forEach(bid => {
+        const targetLevel = template[bid];
+        if (!targetLevel || targetLevel <= 0) return;
+        ensureLevel(bid, targetLevel);
+    });
+
+    if (newItems.length === 0) {
+        log('BUILD', hadConflict ? 'Template: rien ajoute (conflit d\'emplacement special)' : 'Template: rien a ajouter, niveaux deja atteints', 'info');
+        return;
+    }
+
+    if (!buildData.queues[tid]) buildData.queues[tid] = [];
+    buildData.queues[tid].push(...newItems);
+    saveData();
+    refreshSenateQueue();
+    updateStats();
+    updateQueueDisplay();
+    log('BUILD', `Template "${templateName}" applique: ${newItems.length} construction(s) ajoutee(s) a la file (prerequis inclus)`, 'success');
+
+    if (buildData.enabled) processTownQueue(tid);
+}
+
+// ============================================================================
+
 function startTimer() {
     setInterval(() => {
         const el = document.getElementById('build-timer');
@@ -542,7 +885,8 @@ function saveData() {
         gratisEnabled: buildData.gratisEnabled,
         settings: buildData.settings,
         stats: buildData.stats,
-        queues: buildData.queues
+        queues: buildData.queues,
+        templates: buildData.templates
     }));
 }
 
@@ -552,6 +896,7 @@ function loadData() {
         try {
             const d = JSON.parse(saved);
             buildData = { ...buildData, ...d };
+            if (!buildData.templates) buildData.templates = {};
         } catch(e) {}
     }
 }
