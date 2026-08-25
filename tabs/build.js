@@ -13,25 +13,18 @@
         tower: 'Tour', statue: 'Statue divine', oracle: 'Oracle', trade_office: 'Comptoir' 
     };
 
-    const ALL_BUILDINGS = [
-        'main', 'storage', 'farm', 'lumber', 'stoner', 'ironer', 
-        'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide',
-        'theater', 'thermal', 'library', 'lighthouse', 
-        'tower', 'statue', 'oracle', 'trade_office'
-    ];
-
+    const CLASSIC_BUILDINGS = ['main', 'lumber', 'stoner', 'ironer', 'storage', 'farm', 'barracks', 'docks', 'wall', 'academy', 'temple', 'market', 'hide'];
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
     
-    // Grille de sprites officielle (Obélisque supprimé, coordonnées des icônes calées à l'identique du gestionnaire classique)
+    // Coordonnées officielles validées (sans obélisque, remparts/comptoir corrects, oracle en place)
     const SPRITES = { 
-        academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
-        hide: [200, 0], ironer: [250, 0], trade_office: [300, 0], theater: [350, 0], 
-        lumber: [400, 0], main: [450, 0], 
-        market: [0, 50], oracle: [100, 50], statue: [150, 50], 
-        stoner: [200, 50], storage: [250, 50], temple: [300, 50], thermal: [350, 50], 
-        library: [400, 50], lighthouse: [450, 50], 
-        wall: [0, 100], tower: [50, 100] 
+        main: [450, 0], lumber: [400, 0], stoner: [200, 50], ironer: [250, 0], 
+        storage: [250, 50], farm: [150, 0], barracks: [50, 0], docks: [100, 0], 
+        wall: [300, 0], academy: [0, 0], temple: [300, 50], market: [0, 50], 
+        hide: [200, 0], 
+        theater: [350, 50], thermal: [400, 50], library: [300, 0], lighthouse: [350, 0], 
+        tower: [50, 100], statue: [150, 50], oracle: [100, 50], trade_office: [0, 100] 
     };
 
     const FR_TO_ID = { 
@@ -103,26 +96,25 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>🎨</span> Gestionnaire de Ville (Designer)</div>
+                    <div class="section-title"><span>🎨</span> Designer de Template</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
-                    <div style="margin-bottom: 10px; font-size: 11px; color: #F5DEB3; display: flex; justify-content: space-between; align-items: center;">
-                        <span>Configuration des niveaux de bâtiments (Style Gestionnaire)</span>
-                        <span id="building-points-summary" style="color: #FFD700; font-weight: bold;">0 pts</span>
+                    <div style="margin-bottom: 12px; font-size: 11px; color: #F5DEB3;">
+                        Bâtiments classiques et colonnes spéciales exclusives (1 choix max par côté).
                     </div>
                     
-                    <div id="designer-container" style="background: rgba(28,22,12,0.85); padding: 10px; border-radius: 6px; border: 2px solid #8B6914; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-height: 450px; overflow-y: auto;">
-                        <!-- Généré dynamiquement façon grille classique -->
+                    <div id="designer-container" style="display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 500px; overflow-y: auto;">
+                        <!-- Généré dynamiquement -->
                     </div>
 
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
-                        <button class="btn" id="btn-import-town" style="flex: 1; padding: 6px; font-size: 11px; background: linear-gradient(180deg,#9C27B0,#7B1FA2); color:white; border:none;">📥 Importer Niveaux Ville</button>
-                        <button class="btn btn-success" id="btn-save-designer" style="flex: 1; padding: 6px; font-size: 11px;">💾 Sauvegarder Template</button>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
+                        <button class="btn" id="btn-import-town" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#9C27B0,#7B1FA2); color:white; border:none;">📥 Importer Niveaux Ville</button>
+                        <button class="btn btn-success" id="btn-save-designer" style="flex: 1; padding: 8px; font-size: 11px;">💾 Sauvegarder Template</button>
                     </div>
-                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
-                        <button class="btn" id="btn-apply-designer" style="flex: 1; padding: 6px; font-size: 11px; background: linear-gradient(180deg,#2196F3,#1976D2); color:white; border:none;">▶ Appliquer à la Ville</button>
-                        <button class="btn" id="btn-reset-designer" style="flex: 1; padding: 6px; font-size: 11px; background: linear-gradient(180deg,#FF9800,#F57C00); color:white; border:none;">🔄 Réinitialiser Niveaux</button>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+                        <button class="btn" id="btn-apply-designer" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#2196F3,#1976D2); color:white; border:none;">▶ Appliquer à la Ville</button>
+                        <button class="btn" id="btn-reset-designer" style="flex: 1; padding: 8px; font-size: 11px; background: linear-gradient(180deg,#FF9800,#F57C00); color:white; border:none;">🔄 Réinitialiser Niveaux</button>
                     </div>
                 </div>
             </div>
@@ -243,7 +235,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec le Gestionnaire de Ville inspiré des scripts classiques', 'info');
+        log('BUILD', 'Module initialisé avec le designer épuré sans noms', 'info');
     };
 
     module.isActive = function() {
@@ -272,7 +264,7 @@
             }
             const buildingList = town.buildingList ? town.buildingList() : {};
             
-            for (const bid of ALL_BUILDINGS) {
+            for (const bid of Object.keys(NAMES)) {
                 const currentObj = buildingList[bid];
                 const lvl = currentObj ? (currentObj.level || currentObj.akt_level || 0) : 0;
                 buildData.designerTemplate[bid] = lvl;
@@ -290,50 +282,44 @@
         const container = document.getElementById('designer-container');
         if (!container) return;
 
-        let totalLevels = 0;
         const renderItems = (bids) => bids.map(bid => {
             const sp = SPRITES[bid] || [0, 0];
             const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
-            totalLevels += level;
             
-            const isSpecial = LEFT_SPECIALS.includes(bid) || RIGHT_SPECIALS.includes(bid);
-            const borderCol = isSpecial && level > 0 ? '#4CAF50' : '#8B6914';
-
             return `
-                <div style="width: 58px; background: #120d06; border: 1px solid ${borderCol}; border-radius: 4px; padding: 3px; text-align: center;" title="${NAMES[bid]}">
-                    <div style="width: 42px; height: 42px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 3px;"></div>
+                <div style="width: 55px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 4px; text-align: center;" title="${NAMES[bid]}">
+                    <div style="width: 45px; height: 45px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
                     <input type="number" min="0" max="50" value="${level}" 
                         onchange="GU_Build.updateDesigner('${bid}', this.value)"
-                        style="width: 44px; margin-top: 3px; background: #080502; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; font-weight: bold; border-radius: 2px; padding: 1px;" />
+                        style="width: 45px; margin-top: 4px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 1px;" />
                 </div>
             `;
         }).join('');
 
         container.innerHTML = `
-            <div style="width: 100%; display: flex; flex-direction: column; gap: 8px;">
-                <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
-                    ${renderItems(ALL_BUILDINGS.filter(b => !LEFT_SPECIALS.includes(b) && !RIGHT_SPECIALS.includes(b)))}
+            <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
+                <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">🏛️ Bâtiments Classiques</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                    ${renderItems(CLASSIC_BUILDINGS)}
                 </div>
-                <div style="border-top: 1px solid rgba(212,175,55,0.3); margin: 2px 0;"></div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                    <div style="background: rgba(0,0,0,0.2); padding: 4px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
-                        <div style="font-size: 9px; color: #D4AF37; text-align: center; margin-bottom: 4px; font-weight: bold;">⭐ Spéciaux Gauche (1 Max)</div>
-                        <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
-                            ${renderItems(LEFT_SPECIALS)}
-                        </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
+                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">⭐ Spéciaux Gauche (1 Max)</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                        ${renderItems(LEFT_SPECIALS)}
                     </div>
-                    <div style="background: rgba(0,0,0,0.2); padding: 4px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
-                        <div style="font-size: 9px; color: #D4AF37; text-align: center; margin-bottom: 4px; font-weight: bold;">⭐ Spéciaux Droite (1 Max)</div>
-                        <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
-                            ${renderItems(RIGHT_SPECIALS)}
-                        </div>
+                </div>
+
+                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
+                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">⭐ Spéciaux Droite (1 Max)</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                        ${renderItems(RIGHT_SPECIALS)}
                     </div>
                 </div>
             </div>
         `;
-
-        const summaryEl = document.getElementById('building-points-summary');
-        if (summaryEl) summaryEl.textContent = `Niveaux cumuls : ${totalLevels}`;
     }
 
     function updateDesignerLevel(bid, val) {
