@@ -199,6 +199,10 @@ module.render = function(container) {
                         style="background:linear-gradient(145deg,#81C784,#4a7a4a); border:1px solid #A5D6A7; color:#0d1f0d; font-weight:bold; padding:7px 12px; border-radius:4px; cursor:pointer; font-size:11px; white-space:nowrap;">
                         ✅ Appliquer a cette ville
                     </button>
+                    <button id="tpl-reset-btn" title="Réinitialiser le template en cours" aria-label="Réinitialiser le template en cours"
+                        style="background:linear-gradient(145deg,#64B5F6,#1E5A92); border:1px solid #90CAF9; color:#F5FAFF; font-weight:bold; width:34px; height:30px; padding:0; border-radius:4px; cursor:pointer; font-size:18px; line-height:28px; display:flex; align-items:center; justify-content:center;">
+                        ↻
+                    </button>
                     <button id="tpl-delete-btn" title="Supprimer le template"
                         style="background:linear-gradient(145deg,#E57373,#8B3A3A); border:1px solid #FFCDD2; color:#2a0d0d; font-weight:bold; padding:7px 10px; border-radius:4px; cursor:pointer; font-size:11px;">
                         🗑️
@@ -351,6 +355,7 @@ module.init = function() {
         if (!name) { log('BUILD', 'Selectionnez un template a appliquer', 'error'); return; }
         applyTemplateToTown(name);
     };
+    document.getElementById('tpl-reset-btn').onclick = resetCurrentTemplateUI;
     document.getElementById('tpl-select').onchange = (e) => {
         const name = e.target.value;
         if (name && buildData.templates[name]) loadTemplateIntoUI(buildData.templates[name]);
@@ -797,6 +802,34 @@ function loadTemplateIntoUI(template){
     document.querySelectorAll('.tpl-special-cell').forEach(cell=>{const bid=cell.dataset.bid,selected=!!template[bid];cell.dataset.selected=selected?'1':'0';cell.querySelector('.tpl-special-icon').style.borderColor=selected?'#FFD700':'#4a4a3a';cell.querySelector('.tpl-special-icon div').style.opacity=selected?'1':'0.5';});
     document.querySelectorAll('.tpl-research-cell').forEach(cell=>{const key=RESEARCH_KEY_PREFIX+cell.dataset.rid,selected=!!template[key]||!!template[cell.dataset.rid];cell.dataset.selected=selected?'1':'0';cell.style.opacity=selected?'1':'0.48';cell.style.borderColor=selected?'#FFD700':'#4a4a3a';});
     refreshTemplatePrerequisites(true);
+}
+
+function resetCurrentTemplateUI(){
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{
+        inp.value=0;
+        inp.style.borderColor='#8B6914';
+        inp.title=getBuildingName(inp.dataset.bid);
+    });
+
+    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{
+        cell.dataset.selected='0';
+        cell.querySelector('.tpl-special-icon').style.borderColor='#4a4a3a';
+        cell.querySelector('.tpl-special-icon div').style.opacity='0.5';
+    });
+
+    document.querySelectorAll('.tpl-research-cell').forEach(cell=>{
+        cell.dataset.selected='0';
+        cell.style.opacity='0.48';
+        cell.style.borderColor='#4a4a3a';
+    });
+
+    const nameInput=document.getElementById('tpl-name-input');
+    if(nameInput) nameInput.value='';
+    const select=document.getElementById('tpl-select');
+    if(select) select.value='';
+
+    refreshTemplatePrerequisites(false);
+    log('BUILD', 'Template en cours réinitialisé', 'info');
 }
 
 function saveTemplateFromUI() {
