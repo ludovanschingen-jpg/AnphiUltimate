@@ -96,15 +96,16 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>🎨</span> Designer de Template</div>
+                    <div class="section-title"><span>🎨</span> Gestionnaire de Ville (Designer)</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
-                    <div style="margin-bottom: 12px; font-size: 11px; color: #F5DEB3;">
-                        Bâtiments classiques et colonnes spéciales exclusives (1 choix max par côté).
+                    <div style="margin-bottom: 10px; font-size: 11px; color: #F5DEB3; display: flex; justify-content: space-between; align-items: center;">
+                        <span>Style Grille Classique (1 choix max par côté)</span>
+                        <span id="building-points-summary" style="color: #FFD700; font-weight: bold;">0 pts</span>
                     </div>
                     
-                    <div id="designer-container" style="display: flex; flex-direction: column; gap: 10px; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; border: 1px solid rgba(212,175,55,0.3); max-height: 500px; overflow-y: auto;">
+                    <div id="designer-container" style="background: rgba(28,22,12,0.85); padding: 10px; border-radius: 6px; border: 2px solid #8B6914; display: flex; flex-direction: column; gap: 10px; max-height: 500px; overflow-y: auto;">
                         <!-- Généré dynamiquement -->
                     </div>
 
@@ -235,7 +236,7 @@
             updateDesigner: (bid, val) => updateDesignerLevel(bid, val)
         };
 
-        log('BUILD', 'Module initialisé avec le designer épuré sans noms', 'info');
+        log('BUILD', 'Module initialisé avec le Gestionnaire de Ville classique', 'info');
     };
 
     module.isActive = function() {
@@ -282,44 +283,54 @@
         const container = document.getElementById('designer-container');
         if (!container) return;
 
+        let totalLevels = 0;
+
         const renderItems = (bids) => bids.map(bid => {
             const sp = SPRITES[bid] || [0, 0];
             const level = buildData.designerTemplate[bid] !== undefined ? buildData.designerTemplate[bid] : 0;
+            totalLevels += level;
             
+            const isSpecial = LEFT_SPECIALS.includes(bid) || RIGHT_SPECIALS.includes(bid);
+            const borderCol = isSpecial && level > 0 ? '#4CAF50' : '#8B6914';
+
             return `
-                <div style="width: 55px; background: #1a1408; border: 1px solid #8B6914; border-radius: 6px; padding: 4px; text-align: center;" title="${NAMES[bid]}">
-                    <div style="width: 45px; height: 45px; margin: 0 auto; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; border-radius: 4px;"></div>
+                <div style="position: relative; width: 48px; height: 48px; background: url(https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png) no-repeat -${sp[0]}px -${sp[1]}px; background-size: 480px 144px; border: 1.5px solid ${borderCol}; border-radius: 3px; box-shadow: inset 0 0 4px rgba(0,0,0,0.7);" title="${NAMES[bid]}">
                     <input type="number" min="0" max="50" value="${level}" 
                         onchange="GU_Build.updateDesigner('${bid}', this.value)"
-                        style="width: 45px; margin-top: 4px; background: #0f0a04; border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 11px; font-weight: bold; border-radius: 3px; padding: 1px;" />
+                        style="position: absolute; bottom: 1px; right: 1px; width: 28px; background: rgba(15,10,4,0.92); border: 1px solid #D4AF37; color: #FFD700; text-align: center; font-size: 10px; font-weight: bold; border-radius: 2px; padding: 0px;" />
                 </div>
             `;
         }).join('');
 
         container.innerHTML = `
-            <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
-                <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">🏛️ Bâtiments Classiques</div>
-                <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+            <!-- Bâtiments Classiques en ligne/grille compacte style gestionnaire -->
+            <div style="background: rgba(0,0,0,0.25); padding: 6px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
+                <div style="font-size: 9px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 4px; font-weight: bold;">🏛️ Bâtiments Classiques</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
                     ${renderItems(CLASSIC_BUILDINGS)}
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
-                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">⭐ Spéciaux Gauche (1 Max)</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+            <!-- Bâtiments Spéciaux -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                <div style="background: rgba(0,0,0,0.25); padding: 6px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
+                    <div style="font-size: 9px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 4px; font-weight: bold; text-align: center;">⭐ Spéciaux Gauche (1 Max)</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
                         ${renderItems(LEFT_SPECIALS)}
                     </div>
                 </div>
 
-                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(212,175,55,0.15);">
-                    <div style="font-size: 10px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 6px; font-weight: bold; border-bottom: 1px solid rgba(212,175,55,0.2); padding-bottom: 3px;">⭐ Spéciaux Droite (1 Max)</div>
-                    <div style="display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;">
+                <div style="background: rgba(0,0,0,0.25); padding: 6px; border-radius: 4px; border: 1px solid rgba(212,175,55,0.2);">
+                    <div style="font-size: 9px; font-family: Cinzel, serif; color: #D4AF37; margin-bottom: 4px; font-weight: bold; text-align: center;">⭐ Spéciaux Droite (1 Max)</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;">
                         ${renderItems(RIGHT_SPECIALS)}
                     </div>
                 </div>
             </div>
         `;
+
+        const summaryEl = document.getElementById('building-points-summary');
+        if (summaryEl) summaryEl.textContent = `Niveaux : ${totalLevels}`;
     }
 
     function updateDesignerLevel(bid, val) {
