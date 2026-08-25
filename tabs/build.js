@@ -1,4 +1,4 @@
-// Builder revision 2026-08-25 — Injection de force sous la file de l'Académie
+// Builder revision 2026-08-25 — bâtiments actuels + prérequis visuels + recherches + file académie
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -80,11 +80,7 @@ const BUILDING_DEPENDENCY_FALLBACK = {
     trade_office:[['main',21],['market',15],['temple',5]]
 };
 
-function getBuildingDependencies(bid){
-    const explicit = BUILDING_DEPENDENCY_FALLBACK[bid];
-    if(explicit && explicit.length > 0) return explicit;
-    const data=getBuildingData(bid);
-    const raw = data?.dependencies || data?.building_dependencies || data?.requirements || data?.prerequisites;
+function normalizeBuildingDependencies(raw){
     if(!raw) return [];
     if(Array.isArray(raw)){
         const rows=[];
@@ -92,11 +88,44 @@ function getBuildingDependencies(bid){
             if(Array.isArray(item) && item.length>=2){
                 const id=String(item[0]), lvl=Number(item[1]);
                 if(Number.isFinite(lvl) && lvl>0) rows.push([id,lvl]);
+            }else if(item && typeof item==='object'){
+                const id=item.building||item.id||item.type||item.building_id;
+                const lvl=item.level??item.required_level??item.value;
+                const n=Number(lvl);
+                if(id && Number.isFinite(n) && n>0) rows.push([String(id),n]);
             }
         }
-        return rows;
+        return rows.filter(([id])=>NORMAL_BUILDINGS.includes(id)||SPECIAL_LEFT.includes(id)||SPECIAL_RIGHT.includes(id));
+    }
+    if(typeof raw==='object'){
+        const nested=raw.buildings||raw.building||raw.dependencies||raw.requirements||raw.prerequisites;
+        if(nested && nested!==raw){
+            const n=normalizeBuildingDependencies(nested);
+            if(n.length) return n;
+        }
+        return Object.entries(raw)
+            .map(([id,lvl])=>[String(id),Number(typeof lvl==='object' ? (lvl.level??lvl.required_level??lvl.value) : lvl)])
+            .filter(([id,lvl])=>(NORMAL_BUILDINGS.includes(id)||SPECIAL_LEFT.includes(id)||SPECIAL_RIGHT.includes(id))&&Number.isFinite(lvl)&&lvl>0);
     }
     return [];
+}
+
+function getBuildingDependencies(bid){
+    const data=getBuildingData(bid);
+    const candidates=[
+        data?.dependencies,
+        data?.building_dependencies,
+        data?.requirements,
+        data?.prerequisites,
+        data?.build_dependencies,
+        data?.buildings?.dependencies,
+        data?.construction?.dependencies
+    ];
+    for(const raw of candidates){
+        const deps=normalizeBuildingDependencies(raw);
+        if(deps.length) return deps;
+    }
+    return BUILDING_DEPENDENCY_FALLBACK[bid] || [];
 }
 
 function getResearchData(rid){ return uw.GameData?.researches?.[rid] || null; }
@@ -748,7 +777,7 @@ function injectSenateQueue() {
         return;
     }
 
-    const $bt = uw.$('.gpwindow_content:visible #building_tasks_main');
+    const $bt = uw.$('#building_tasks_main');
     if (!$bt.length) return;
 
     const queue = buildData.queues[uw.Game.townId] || [];
@@ -758,7 +787,7 @@ function injectSenateQueue() {
         $parent.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
     }
     
-    $bt.after(`<div id="autobuild-senate-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;">
+    $bt.after(`<div id="autobuild-senate-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px;padding:10px;flex-shrink:0;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
             <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Build</span>
             <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${queue.length}</span>
@@ -792,65 +821,32 @@ function refreshSenateQueue() {
     }
 }
 
-// ---------------------------------------------------------------------------------
-// NOUVEAU SYSTEME D'INJECTION (FORCE L'EMPLACEMENT SOUS LA FILE DE L'ACADEMIE)
-// ---------------------------------------------------------------------------------
 function injectAcademyQueue() {
     if (uw.$('#autobuild-academy-queue').length) {
         refreshAcademyQueue();
         return;
     }
 
-    // 1. On cherche explicitement la fenêtre qui contient les textes "Points de recherche"
-    // Cela nous garantit à 100% d'être dans l'Académie, même si le Sénat est ouvert à côté
-    const $w = uw.$('.gpwindow_content:visible').filter(function() {
-        const txt = uw.$(this).text() || '';
-        return txt.includes('Points de recherche') && txt.includes('File de recherche');
-    }).first();
-
+    const $w = uw.$('.gpwindow_content:visible');
     if (!$w.length) return;
-
-    // 2. On rend la fenêtre scrollable pour être sûr de voir la file ajoutée en bas
-    if ($w.css('overflow') !== 'auto') {
-        $w.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
-    }
-
-    // 3. On va chercher *exactement* le bout de texte "File de recherche" pour se mettre en dessous
-    let $target = null;
-    const $elementsWithText = $w.find('*:contains("File de recherche")');
     
-    if ($elementsWithText.length > 0) {
-        // On prend l'élément le plus bas/profond dans le code (celui qui entoure le texte directement)
-        const $deepest = $elementsWithText.last();
-        
-        // On remonte un peu l'arbre HTML pour trouver la grosse boite qui contient cette file
-        $target = $deepest.closest('.game_data_queue, .CGameDataQueue, [class*="queue"]');
-        
-        // S'il n'y a pas de classe "queue", on remonte simplement de deux crans par sécurité
-        if (!$target.length) {
-            $target = $deepest.parent().parent(); 
-        }
-    }
+    const isAcademy = $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
+    if (!isAcademy) return;
 
     const tid = uw.Game.townId;
     const rQueue = (buildData.researchQueues && buildData.researchQueues[tid]) || [];
 
-    const queueHtml = `<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px 0;padding:10px;flex-shrink:0;position:relative;clear:both;">
+    if ($w.css('overflow') !== 'auto') {
+        $w.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
+    }
+
+    $w.prepend(`<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px;padding:10px;flex-shrink:0;z-index:100;position:relative;">
         <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
             <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Recherches</span>
             <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${rQueue.length}</span>
         </div>
         <div class="research-queue-items" style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;"></div>
-    </div>`;
-
-    // 4. On injecte EN DESSOUS ($target.after)
-    if ($target && $target.length) {
-        $target.after(queueHtml);
-    } else {
-        // En cas d'échec total (très improbable), on le force tout en bas de la fenêtre
-        $w.children().first().append(queueHtml);
-    }
-    
+    </div>`);
     refreshAcademyQueue();
 }
 
@@ -864,11 +860,11 @@ function refreshAcademyQueue() {
     
     if ($items.length) {
         if (rQueue.length === 0) {
-            $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;width:100%;">File vide - Utilisez les boutons "+ FILE" sur les recherches</div>');
+            $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;width:100%;">File de recherches vide - Utilisez les boutons "+ FILE" sur les recherches</div>');
         } else {
             $items.html(rQueue.map((rid, i) => {
-                return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getResearchName(rid)}">
-                    <div class="research_icon research40x40 ${rid}" style="width:40px;height:40px;margin:3px auto;"></div>
+                return `<div style="width:40px;height:40px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getResearchName(rid)}">
+                    <div class="research_icon research40x40 ${rid}" style="width:36px;height:36px;margin:1px auto;"></div>
                     <div onclick="event.stopPropagation();GU_Build.removeResearch(${i})" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;display:none;">x</div>
                 </div>`;
             }).join(''));
@@ -878,11 +874,7 @@ function refreshAcademyQueue() {
 }
 
 function addBuildButtons() {
-    // Boutons de construction limités au Sénat
-    const $w = uw.$('.gpwindow_content:visible').filter(function() {
-        return uw.$(this).find('.building').length > 0 && !uw.$(this).find('.research_list').length;
-    }).first();
-    
+    const $w = uw.$('.gpwindow_content:visible');
     if (!$w.length) return;
 
     $w.find('.building').each(function() {
@@ -927,15 +919,12 @@ function addBuildButtons() {
 }
 
 function addResearchButtons() {
-    // Boutons de recherche limités exclusivement à l'Académie avec le ciblage par mot-clé
-    const $w = uw.$('.gpwindow_content:visible').filter(function() {
-        const txt = uw.$(this).text() || '';
-        return txt.includes('Points de recherche');
-    }).first();
-
+    const $w = uw.$('.gpwindow_content:visible');
     if (!$w.length) return;
+    const isAcademy = $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
+    if (!isAcademy) return;
 
-    $w.find('.research_technology, .research, [class*="research_id"]').each(function() {
+    $w.find('.research_technology, .research').each(function() {
         const $el = uw.$(this);
         if ($el.find('.ab-research-btn').length) return;
 
@@ -1015,10 +1004,7 @@ function initResearchToggleHandlers(){
 }
 
 function initTemplateInputHandlers(){
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{
-        inp.addEventListener('change',()=>refreshTemplatePrerequisites(true));
-        inp.addEventListener('blur',()=>refreshTemplatePrerequisites(true));
-    });
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{inp.addEventListener('input',()=>refreshTemplatePrerequisites(true));inp.addEventListener('change',()=>refreshTemplatePrerequisites(true));});
 }
 
 function getTemplateSelections(){
@@ -1036,10 +1022,7 @@ function calculateTemplateRequirements(){
     const visiting=new Set();
     function ensureBuildingRequirement(bid,lvl){
         if(!bid||!lvl||(required[bid]||0)>=lvl||visiting.has(bid))return;
-        visiting.add(bid);
-        getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>ensureBuildingRequirement(reqBid,reqLvl));
-        required[bid]=Math.max(required[bid]||0,lvl);
-        visiting.delete(bid);
+        visiting.add(bid);getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>ensureBuildingRequirement(reqBid,reqLvl));required[bid]=Math.max(required[bid]||0,lvl);visiting.delete(bid);
     }
     Object.entries(buildings).forEach(([bid,lvl])=>ensureBuildingRequirement(bid,lvl));
     Object.keys(researches).forEach(rid=>ensureBuildingRequirement('academy',getResearchAcademyLevel(rid)));
@@ -1051,7 +1034,7 @@ function syncBuildingInputsToRequirements(){
     document.querySelectorAll('.tpl-level-input').forEach(inp=>{
         const bid=inp.dataset.bid,required=result.buildings[bid]||0,explicit=parseInt(inp.value)||0;
         const finalLevel=Math.min(Math.max(explicit,required),getBuildingMaxLevel(bid));
-        if(explicit > 0 && parseInt(inp.value)!==finalLevel) inp.value=finalLevel;
+        if(parseInt(inp.value)!==finalLevel)inp.value=finalLevel;
         const isAuto=required>explicit;
         inp.style.borderColor=isAuto?'#66BB6A':'#8B6914';
         inp.title=isAuto?`${getBuildingName(bid)} — requis automatiquement: ${required}`:getBuildingName(bid);
