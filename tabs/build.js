@@ -16,6 +16,18 @@
     const LEFT_SPECIALS = ['theater', 'thermal', 'library', 'lighthouse'];
     const RIGHT_SPECIALS = ['tower', 'statue', 'oracle', 'trade_office'];
 
+    // Coordonnées exactes et vérifiées de la sprite sheet des bâtiments (500x150 px)
+    const SPRITES = { 
+        academy: [0, 0], barracks: [50, 0], docks: [100, 0], farm: [150, 0], 
+        hide: [200, 0], ironer: [250, 0], library: [300, 0], lighthouse: [350, 0], 
+        lumber: [400, 0], main: [450, 0], 
+        market: [0, 50], oracle: [100, 50], statue: [150, 50], 
+        stoner: [200, 50], storage: [250, 50], temple: [300, 50], theater: [350, 50], 
+        thermal: [400, 50], tower: [450, 50], 
+        wall: [0, 100], trade_office: [50, 100] 
+    };
+
+    // Organisation exacte des recherches sur deux lignes
     const RESEARCH_ROWS = [
         ['stone_cultivation', 'booty', 'espionage', 'slinger', 'archer', 'hoplite', 'town_guard', 'architecture', 'ceramics', 'crane', 'colony_ship', 'bireme', 'fire_ship', 'demolition_ship'],
         ['trireme', 'fast_transport', 'transport_ship', 'phalanx', 'ram', 'cartography', 'meteorology', 'code_of_laws', 'mathematics', 'plow', 'pillage', 'negotiation', 'cryptology']
@@ -76,14 +88,13 @@
         if (!document.getElementById('gu-designer-modal')) {
             const modal = document.createElement('div');
             modal.id = 'gu-designer-modal';
-            // Style aux couleurs exactes du parchemin Grepolis tel que demandé
             modal.style = `display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
                            width: 1150px; background: #f3e5c8; border: 3px solid #8B6914; border-radius: 4px; 
                            z-index: 100000; box-shadow: 0 0 30px rgba(0,0,0,0.9); color: #3b2a18;`;
             
             modal.innerHTML = `
                 <div id="gu-designer-header" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(to bottom, #d4be94, #b59b6c); border-bottom: 2px solid #8B6914; padding: 8px 15px; cursor: move;">
-                    <h2 style="margin: 0; font-family: Cinzel, serif; color: #3b2a18; font-size: 16px; font-weight: bold;">Gestionnaire de Ville</h2>
+                    <h2 style="margin: 0; font-family: Cinzel, serif; color: #3b2a18; font-size: 16px; font-weight: bold;">Gestionnaire de Ville & Recherches</h2>
                     <div style="cursor: pointer; font-weight: bold; color: #8b0000; font-size: 14px; padding: 2px 6px;" onclick="GU_Build.closeDesigner()">✕ Fermer</div>
                 </div>
                 
@@ -142,12 +153,10 @@
         const boxSize = 50;
 
         const createBuildingBox = (bid) => {
+            const sp = SPRITES[bid] || [0, 0];
             const level = buildData.designerTemplate[bid] || 0;
             return `
-                <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 1px solid #7c5c23; background: #fff; box-shadow: inset 0 0 3px rgba(0,0,0,0.2); overflow: hidden;" title="${NAMES[bid]}">
-                    <div style="width: 50px; height: 50px; position: absolute; top: 0; left: 0; pointer-events: none;">
-                        <div class="building_icon ${bid}" style="width: 50px; height: 50px;"></div>
-                    </div>
+                <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 1px solid #7c5c23; background: url('https://gpit.innogamescdn.com/images/game/main/buildings_sprite_50x50.png') no-repeat -${sp[0]}px -${sp[1]}px; background-size: 500px 150px; box-shadow: inset 0 0 3px rgba(0,0,0,0.2); overflow: hidden;" title="${NAMES[bid]}">
                     <input type="number" min="0" max="50" value="${level}" onchange="GU_Build.updateDesigner('${bid}', this.value)" 
                            style="position: absolute; bottom: 1px; right: 1px; width: 26px; height: 16px; background: rgba(0,0,0,0.8); border: 1px solid #7c5c23; color: #fff; text-align: center; font-size: 10px; font-weight: bold; z-index: 2;" />
                 </div>
@@ -157,10 +166,8 @@
         const createResearchBox = (rid) => {
             const resState = buildData.researchTemplate && buildData.researchTemplate[rid] ? buildData.researchTemplate[rid] : 0;
             return `
-                <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 1px solid #7c5c23; background: #fff; box-shadow: inset 0 0 3px rgba(0,0,0,0.2); overflow: hidden;" title="${rid}">
-                    <div style="width: 50px; height: 50px; position: absolute; top: 0; left: 0; pointer-events: none;">
-                        <div class="research_icon ${rid}" style="width: 50px; height: 50px; background-size: contain; background-repeat: no-repeat; background-position: center;"></div>
-                    </div>
+                <div style="position: relative; width: ${boxSize}px; height: ${boxSize}px; border: 1px solid #7c5c23; background: rgba(255,255,255,0.7); box-shadow: inset 0 0 3px rgba(0,0,0,0.2); overflow: hidden;" title="${rid}">
+                    <div style="width: 50px; height: 50px; position: absolute; top: 0; left: 0; pointer-events: none; background: url('https://gpit.innogamescdn.com/images/game/researches/${rid}.png') center center no-repeat; background-size: contain;"></div>
                     <input type="number" min="0" max="1" value="${resState}" onchange="GU_Build.updateResearch('${rid}', this.value)" 
                            style="position: absolute; bottom: 1px; right: 1px; width: 26px; height: 16px; background: rgba(0,0,0,0.8); border: 1px solid #7c5c23; color: #fff; text-align: center; font-size: 10px; font-weight: bold; z-index: 2;" />
                 </div>
@@ -185,7 +192,7 @@
                     </div>
                 </div>
 
-                <!-- LIGNE DE SÉPARATION COMME SUR L'IMAGE -->
+                <!-- LIGNE DE SÉPARATION -->
                 <div style="width: 100%; height: 1px; background: #7c5c23; margin: 10px 0;"></div>
 
                 <!-- RECHERCHES DE L'ACADÉMIE -->
