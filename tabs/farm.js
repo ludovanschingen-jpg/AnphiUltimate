@@ -64,7 +64,7 @@
         `);
     }
 
-    // ─── UI DE L'ONGLET (AVEC LES DEUX COLONNES) ─────────────────────────────────
+    // ─── UI DE L'ONGLET ──────────────────────────────────────────────────────────
 
     module.render = function(container) {
         container.innerHTML = `
@@ -136,7 +136,7 @@
                         </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ Actions diversifiées garanties de se fermer, puis récolte sécurisée, puis délai aléatoire exact à la seconde près.
+                        ℹ️ 2 routines séquentielles (ouverture, action, attente 2-4s, fermeture obligatoire), puis récolte sécurisée, puis timer à la seconde près.
                     </div>
                 </div>
             </div>
@@ -183,7 +183,7 @@
         }
     }
 
-    // ─── INIT ────────────────────────────────────────────────────────────────     
+    // ─── INIT ─────────────────────────────────────────────────────────────────────
 
     module.init = function() {
         loadData();
@@ -228,7 +228,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé (fermeture sécurisée des fenêtres) initialisé', 'info');
+        log('FARM', 'Module humanisé (séquence stricte 2 actions puis récolte) initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -283,7 +283,7 @@
         if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
     }
 
-    // ─── TIMER ALÉATOIRE PRÉCIS BASÉ SUR L'OPTION CHOISIE (À LA SECONDE PRÈS) ─────
+    // ─── TIMER ALÉATOIRE PRÉCIS À LA SECONDE PRÈS ────────────────────────────────
 
     function getRandomIntervalMs() {
         const opt = DURATION_OPTIONS[farmData.settings.duration] || DURATION_OPTIONS[2];
@@ -293,13 +293,13 @@
         return randomSecs * 1000;
     }
 
-    // ─── TÂCHES ALÉATOIRES AVEC FERMETURE GARANTIE (TRY...FINALLY) ───────────────
+    // ─── 2 ACTIONS SÉQUENTIELLES STRICTES (OUVERTURE -> ACTION -> 2-4s -> FERMETURE OBLIGATOIRE) ───
 
     async function performRandomHumanActions() {
         if (!farmData.enabled) return;
         
         try {
-            log('FARM', 'Routine humaine : Actions aléatoires avancées...', 'info');
+            log('FARM', 'Routine humaine : Exécution des 2 actions aléatoires séquentielles...', 'info');
 
             const possibleTasks = [
                 {
@@ -362,13 +362,14 @@
 
             if (possibleTasks.length === 0) return;
 
+            // Mélanger la liste et prendre rigoureusement 2 actions distinctes
             possibleTasks.sort(() => Math.random() - 0.5);
             const selectedTasks = possibleTasks.slice(0, 2);
 
             for (const task of selectedTasks) {
                 if (!farmData.enabled) break;
 
-                log('FARM', `Ouverture de l'onglet : [${task.name}]`, 'info');
+                log('FARM', `Ouverture de l'onglet 1/2 : [${task.name}]`, 'info');
                 let winInstance = null;
 
                 try {
@@ -379,7 +380,7 @@
                             await task.action(winInstance);
                         }
 
-                        // Temps d'attente "humain" entre 2 et 4 secondes
+                        // Temps d'attente "humain" strict entre 2 et 4 secondes
                         const waitTime = Math.floor(Math.random() * 2001) + 2000;
                         await new Promise(r => setTimeout(r, waitTime));
                     } else {
@@ -388,15 +389,14 @@
                 } catch (innerErr) {
                     console.error(`[FARM Action Error - ${task.name}]`, innerErr);
                 } finally {
-                    // BLOC FINALLY : Garanti de s'exécuter quoiqu'il arrive (fermeture propre)
-                    log('FARM', `Fermeture de l'onglet : [${task.name}]`, 'info');
+                    // FERMETURE OBLIGATOIRE GARANTIE (bloque toute fuite de fenêtre ouverte)
+                    log('FARM', `Fermeture obligatoire de l'onglet : [${task.name}]`, 'info');
                     try {
                         if (winInstance && typeof winInstance.close === 'function') {
                             winInstance.close();
                         }
                     } catch (e) {}
 
-                    // Double sécurité : force la fermeture de toutes les fenêtres de ce type
                     if (uw.GPWindowMgr && typeof uw.GPWindowMgr.CloseAllOpenWindowsOfType === 'function') {
                         try {
                             uw.GPWindowMgr.CloseAllOpenWindowsOfType(task.type);
@@ -404,7 +404,7 @@
                     }
                 }
 
-                // Pause naturelle entre les deux actions
+                // Petite pause naturelle entre la 1ère et la 2ème action
                 await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 800));
             }
 
@@ -413,13 +413,15 @@
         }
     }
 
-    // ─── CYCLE PRINCIPAL ─────────────────────────────────────────────────────────
+    // ─── CYCLE PRINCIPAL STRICT ──────────────────────────────────────────────────
 
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
+        // 1. Début de la routine : Affichage du bouton Stop
         showStopButton(true);
 
+        // 2. ÉTAPE 1 & 2 : Lancer la 1ère action aléatoire, puis la 2ème action aléatoire (fermées obligatoirement)
         await performRandomHumanActions();
 
         if (!farmData.enabled) {
@@ -427,6 +429,7 @@
             return;
         }
 
+        // 3. ÉTAPE 3 : SEULEMENT MAINTENANT, lancer la récolte des villages paysans
         await executeFarmClaim();
 
         if (!farmData.enabled) {
@@ -434,8 +437,10 @@
             return;
         }
 
+        // 4. Fin de la routine : Masquage du bouton Stop
         showStopButton(false);
 
+        // 5. Planification du prochain timing aléatoire exact à la seconde près
         const nextDelay = getRandomIntervalMs();
         const totalSecs = Math.round(nextDelay / 1000);
         const mins = Math.floor(totalSecs / 60);
