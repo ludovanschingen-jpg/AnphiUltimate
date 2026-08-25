@@ -136,7 +136,7 @@
                         </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ 2 onglets ouverts/fermés proprement au début, puis récolte sécurisée, puis délai aléatoire (ex: 10 à 17 min).
+                        ℹ️ Actions diversifiées au début, puis récolte sécurisée, puis délai aléatoire à la seconde près (10 à 17 min).
                     </div>
                 </div>
             </div>
@@ -228,7 +228,7 @@
         }
 
         startTimer();
-        log('FARM', 'Module humanisé (options à deux colonnes & timer aléatoire) initialisé', 'info');
+        log('FARM', 'Module humanisé (options à deux colonnes & timer aléatoire à la seconde) initialisé', 'info');
     };
 
     module.isActive  = function() { return farmData.enabled; };
@@ -283,13 +283,12 @@
         if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
     }
 
-    // ─── TIMER ALÉATOIRE STRICT ENTRE 10 ET 17 MINUTES ──────────────────────────
+    // ─── TIMER ALÉATOIRE PRÉCIS (ENTRE 10 ET 17 MINUTES, À LA SECONDE PRÈS) ──────
 
     function getRandomIntervalMs() {
-        const minMins = 10;
-        const maxMins = 17;
-        const randomMins = Math.floor(Math.random() * (maxMins - minMins + 1)) + minMins;
-        return randomMins * 60 * 1000;
+        const minMs = 10 * 60 * 1000; // 10 minutes en ms (600 000)
+        const maxMs = 17 * 60 * 1000; // 17 minutes en ms (1 020 000)
+        return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
     }
 
     // ─── TÂCHES ALÉATOIRES AMÉLIORÉES ET DIVERSIFIÉES ─────────────────────────────
@@ -364,7 +363,6 @@
                 if (uw.GPWindowMgr && typeof uw.GPWindowMgr.Create === 'function') {
                     const winInstance = uw.GPWindowMgr.Create(task.type);
 
-                    // Exécuter l'action spécifique de l'onglet (clic sur message, rapport, ou onglet de forum)
                     if (typeof task.action === 'function' && winInstance) {
                         await task.action(winInstance);
                     }
@@ -399,10 +397,8 @@
     async function runFarmCycle() {
         if (!farmData.enabled) return;
 
-        // 1. DÉBUT DU CYCLE : Affichage du bouton "Stop current routine"
         showStopButton(true);
 
-        // Exécuter les 2 tâches aléatoires (avec les nouvelles interactions et fermetures propres)
         await performRandomHumanActions();
 
         if (!farmData.enabled) {
@@ -410,7 +406,6 @@
             return;
         }
 
-        // Exécuter la récolte des villages paysans
         await executeFarmClaim();
 
         if (!farmData.enabled) {
@@ -418,12 +413,13 @@
             return;
         }
 
-        // 2. FIN DE LA ROUTINE : Masquage du bouton "Stop current routine"
         showStopButton(false);
 
-        // 3. Planifier le délai aléatoire entre 10 et 17 minutes pour le prochain passage
         const nextDelay = getRandomIntervalMs();
-        log('FARM', `Prochain cycle planifié dans ~${Math.round(nextDelay / 60000)} minutes.`, 'info');
+        const totalSecs = Math.round(nextDelay / 1000);
+        const mins = Math.floor(totalSecs / 60);
+        const secs = totalSecs % 60;
+        log('FARM', `Prochain cycle planifié dans ~${mins}m ${secs}s.`, 'info');
         scheduleNext(nextDelay);
     }
 
