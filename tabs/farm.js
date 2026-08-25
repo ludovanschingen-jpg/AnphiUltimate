@@ -100,7 +100,7 @@
 
             <div class="bot-section">
                 <div class="section-header">
-                    <div class="section-title"><span>⏱️</span> Prochaine Récolte (Aléatoire 10-17m)</div>
+                    <div class="section-title"><span>⏱️</span> Prochaine Récolte (Aléatoire à la seconde)</div>
                     <span class="section-toggle">▼</span>
                 </div>
                 <div class="section-content">
@@ -136,7 +136,7 @@
                         </div>
                     </div>
                     <div style="margin-top:10px;padding:10px;background:rgba(0,0,0,0.2);border-radius:6px;font-size:11px;color:#BDB76B;">
-                        ℹ️ Actions diversifiées au début, puis récolte sécurisée, puis délai aléatoire à la seconde près (10 à 17 min).
+                        ℹ️ Actions diversifiées au début, puis récolte sécurisée, puis délai aléatoire exact à la seconde près.
                     </div>
                 </div>
             </div>
@@ -283,12 +283,17 @@
         if (window.GrepolisUltimate) window.GrepolisUltimate.updateButtonState();
     }
 
-    // ─── TIMER ALÉATOIRE PRÉCIS (ENTRE 10 ET 17 MINUTES, À LA SECONDE PRÈS) ──────
+    // ─── TIMER ALÉATOIRE PRÉCIS BASÉ SUR L'OPTION CHOISIE (À LA SECONDE PRÈS) ─────
 
     function getRandomIntervalMs() {
-        const minMs = 10 * 60 * 1000; // 10 minutes en ms (600 000)
-        const maxMs = 17 * 60 * 1000; // 17 minutes en ms (1 020 000)
-        return Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
+        const opt = DURATION_OPTIONS[farmData.settings.duration] || DURATION_OPTIONS[2];
+        const baseSec = opt.intervalSec; // 300s (5m), 600s (10m), ou 1200s (20m)
+        
+        // Ajout d'une variation aléatoire humaine allant de 0 à 7 minutes supplémentaires (en secondes exactes)
+        const extraSecMax = 7 * 60; 
+        const randomSecs = Math.floor(Math.random() * extraSecMax) + baseSec;
+        
+        return randomSecs * 1000; // Conversion en millisecondes
     }
 
     // ─── TÂCHES ALÉATOIRES AMÉLIORÉES ET DIVERSIFIÉES ─────────────────────────────
@@ -351,7 +356,6 @@
 
             if (possibleTasks.length === 0) return;
 
-            // Mélange aléatoire total pour piocher 2 actions différentes à chaque cycle
             possibleTasks.sort(() => Math.random() - 0.5);
             const selectedTasks = possibleTasks.slice(0, 2);
 
@@ -367,7 +371,6 @@
                         await task.action(winInstance);
                     }
 
-                    // Temps d'attente "humain" entre 2 et 4 secondes
                     const waitTime = Math.floor(Math.random() * 2001) + 2000;
                     await new Promise(r => setTimeout(r, waitTime));
 
@@ -383,7 +386,6 @@
                     await new Promise(r => setTimeout(r, 3000));
                 }
 
-                // Pause naturelle entre les deux actions
                 await new Promise(r => setTimeout(r, Math.floor(Math.random() * 1000) + 800));
             }
 
