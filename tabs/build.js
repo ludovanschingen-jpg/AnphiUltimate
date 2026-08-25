@@ -1,4 +1,4 @@
-// Builder revision 2026-08-25 — bâtiments actuels + prérequis visuels + recherches + file académie
+// Builder revision 2026-08-25 — bâtiments actuels + prérequis visuels + recherches
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -6,6 +6,7 @@ const GM_setValue = module.GM_setValue;
 const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
 
 // Données Grepolis dynamiques : alignées sur GameData utilisé par GrepolisInjected.
+// On n'utilise plus l'ancien sprite atlas du wiki pour identifier les bâtiments.
 const NAMES = {
     main:'Senat', lumber:'Scierie', farm:'Ferme', stoner:'Carriere', storage:'Entrepot',
     ironer:'Mine', barracks:'Caserne', temple:'Temple', market:'Marche', docks:'Port',
@@ -23,8 +24,11 @@ const BUILDING_MAX_LEVELS = {
     theater:1,thermal:1,library:1,lighthouse:1,tower:1,statue:1,oracle:1,trade_office:1
 };
 
+// Liste issue directement de Palette.tsx de l'autre script.
 const RESEARCH_KEY_PREFIX = '__research__';
 
+// Ordre conforme au tableau du Wiki FR : 1 / 4 / 7 / 10 / 13 / 16 / 19 / 22 / 25 / 28 / 31 / 34.
+// Les identifiants sont ceux utilisés par l'autre script (GameData/GrepoAuto).
 const RESEARCH_LEVEL_GROUPS = {
     1:  ['slinger','archer','town_guard'],
     4:  ['hoplite','meteorology'],
@@ -54,13 +58,18 @@ const RESEARCH_FALLBACK = {
     ram:{name:'Bélier',academy:28}, cartography:{name:'Cartographie',academy:28}, take_over:{name:'Conquête',academy:28}, take_over_old:{name:'Révolte',academy:28},
     stone_storm:{name:'Grêle de pierres',academy:31}, temple_looting:{name:'Pillage de temple',academy:31}, divine_selection:{name:'Sélection divine',academy:31},
     combat_experience:{name:'Expérience de combat',academy:34}, strong_wine:{name:'Vin puissant',academy:34}, set_sail:{name:'Mettre les voiles',academy:34},
+    // Variantes présentes dans l'autre script : conservées si GameData les expose.
     booty_bpv:{name:'Butin',academy:7}, booty:{name:'Butin',academy:7}
 };
+
 
 function getBuildingData(bid){ return uw.GameData?.buildings?.[bid] || null; }
 function getBuildingName(bid){ return getBuildingData(bid)?.name || NAMES[bid] || bid; }
 function getBuildingMaxLevel(bid){ return Number(getBuildingData(bid)?.max_level ?? BUILDING_MAX_LEVELS[bid] ?? 30); }
 
+// Prérequis bâtiments : Grepolis n'expose pas toujours ces données sous la même
+// propriété selon la version du client. On essaie plusieurs formats natifs puis
+// on utilise une table de secours correspondant aux bâtiments actuels.
 const BUILDING_DEPENDENCY_FALLBACK = {
     main:[], lumber:[], stoner:[], ironer:[], farm:[], storage:[],
     market:[['main',3],['storage',5]],
@@ -127,7 +136,6 @@ function getBuildingDependencies(bid){
     }
     return BUILDING_DEPENDENCY_FALLBACK[bid] || [];
 }
-
 function getResearchData(rid){ return uw.GameData?.researches?.[rid] || null; }
 function getResearchName(rid){ return getResearchData(rid)?.name || RESEARCH_FALLBACK[rid]?.name || rid; }
 function getResearchAcademyLevel(rid){
@@ -165,6 +173,7 @@ function getResearchIdsSorted(){
     });
 }
 
+// Ancien mapping utilisé seulement pour reconnaître les intitulés du Sénat.
 const FR_TO_ID = {
     senat:'main', sénat:'main', scierie:'lumber', ferme:'farm', carriere:'stoner', carrière:'stoner',
     entrepot:'storage', entrepôt:'storage', mine:'ironer', "mine d'argent":'ironer', argent:'ironer',
@@ -174,6 +183,8 @@ const FR_TO_ID = {
     statue:'statue', 'statue divine':'statue', oracle:'oracle', comptoir:'trade_office', theatre:'theater', théâtre:'theater'
 };
 
+// Reste du fallback conservé pour compatibilité avec les anciennes données.
+const REQUIREMENTS = {};
 let buildData = {
     enabled: false,
     gratisEnabled: false,
@@ -186,7 +197,6 @@ let buildData = {
 };
 
 let senateWatcherInterval = null;
-let academyWatcherInterval = null;
 let gratisInterval = null;
 let fillInterval = null;
 
@@ -467,14 +477,11 @@ module.init = function() {
     }
 
     startSenateWatcher();
-    startAcademyWatcher();
     startTimer();
     
     window.GU_Build = {
         add: (bid, lvl) => addToQueue(bid, lvl),
-        remove: (idx) => removeFromQueue(idx),
-        addResearch: (rid) => addResearchToQueue(rid),
-        removeResearch: (idx) => removeResearchFromQueue(idx)
+        remove: (idx) => removeFromQueue(idx)
     };
 
     log('BUILD', 'Module initialise', 'info');
@@ -502,6 +509,9 @@ function toggleBuild(enabled) {
         buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
         processAllQueues();
 
+        // Remplissage continu : tant que le bot est actif, on retente regulierement de
+        // remplir la file de construction (nouveaux emplacements libres, ressources reconstituees...)
+        // jusqu'a ce qu'il n'y ait plus rien a construire ou plus assez de ressources.
         if (fillInterval) clearInterval(fillInterval);
         fillInterval = setInterval(() => {
             if (buildData.enabled) { processAllQueues(); processAllResearchQueues(); }
@@ -533,6 +543,7 @@ function toggleGratis(enabled) {
         status.style.color = '#81C784';
         log('BUILD', 'Auto Gratis activé', 'success');
         
+        // Démarrer l'intervalle de vérification du bouton Gratis
         if (gratisInterval) clearInterval(gratisInterval);
         gratisInterval = setInterval(checkGratis, 2500);
     } else {
@@ -541,6 +552,7 @@ function toggleGratis(enabled) {
         status.style.color = '#E57373';
         log('BUILD', 'Auto Gratis désactivé', 'info');
         
+        // Arrêter l'intervalle
         if (gratisInterval) {
             clearInterval(gratisInterval);
             gratisInterval = null;
@@ -555,14 +567,18 @@ function toggleGratis(enabled) {
 
 function checkGratis() {
     try {
+        // Chercher le bouton Gratis disponible (pas désactivé)
         const gratisButton = uw.$('.type_building_queue.type_free').not('.disabled');
         
         if (gratisButton.length > 0) {
+            // Cliquer sur le bouton
             gratisButton.click();
             
+            // Récupérer les informations de la ville actuelle
             const town = uw.ITowns.getCurrentTown();
             if (!town) return;
             
+            // Chercher une construction de moins de 5 minutes (300 secondes)
             const buildingOrders = town.buildingOrders();
             if (!buildingOrders || !buildingOrders.models) return;
             
@@ -729,45 +745,11 @@ function removeFromQueue(idx) {
     }
 }
 
-function addResearchToQueue(rid) {
-    const tid = uw.Game.townId;
-    if (!buildData.researchQueues) buildData.researchQueues = {};
-    if (!buildData.researchQueues[tid]) buildData.researchQueues[tid] = [];
-    buildData.researchQueues[tid].push(rid);
-    saveData();
-    log('BUILD', `+ Recherche ${getResearchName(rid)}`, 'success');
-    refreshAcademyQueue();
-    updateStats();
-    updateQueueDisplay();
-    uw.$('.ab-research-btn').remove();
-    if (buildData.enabled) processTownResearchQueue(tid);
-}
-
-function removeResearchFromQueue(idx) {
-    const tid = uw.Game.townId;
-    if (buildData.researchQueues && buildData.researchQueues[tid]) {
-        buildData.researchQueues[tid].splice(idx, 1);
-        saveData();
-        refreshAcademyQueue();
-        updateStats();
-        updateQueueDisplay();
-        uw.$('.ab-research-btn').remove();
-    }
-}
-
 function startSenateWatcher() {
     if (senateWatcherInterval) clearInterval(senateWatcherInterval);
     senateWatcherInterval = setInterval(() => {
         injectSenateQueue();
         addBuildButtons();
-    }, 1000);
-}
-
-function startAcademyWatcher() {
-    if (academyWatcherInterval) clearInterval(academyWatcherInterval);
-    academyWatcherInterval = setInterval(() => {
-        injectAcademyQueue();
-        addResearchButtons();
     }, 1000);
 }
 
@@ -821,58 +803,6 @@ function refreshSenateQueue() {
     }
 }
 
-function injectAcademyQueue() {
-    if (uw.$('#autobuild-academy-queue').length) {
-        refreshAcademyQueue();
-        return;
-    }
-
-    const $w = uw.$('.gpwindow_content:visible');
-    if (!$w.length) return;
-    
-    const isAcademy = $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
-    if (!isAcademy) return;
-
-    const tid = uw.Game.townId;
-    const rQueue = (buildData.researchQueues && buildData.researchQueues[tid]) || [];
-
-    if ($w.css('overflow') !== 'auto') {
-        $w.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
-    }
-
-    $w.prepend(`<div id="autobuild-academy-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px;padding:10px;flex-shrink:0;z-index:100;position:relative;">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
-            <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Recherches</span>
-            <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${rQueue.length}</span>
-        </div>
-        <div class="research-queue-items" style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;"></div>
-    </div>`);
-    refreshAcademyQueue();
-}
-
-function refreshAcademyQueue() {
-    const tid = uw.Game.townId;
-    const rQueue = (buildData.researchQueues && buildData.researchQueues[tid]) || [];
-    const $items = uw.$('#autobuild-academy-queue .research-queue-items');
-    const $count = uw.$('#autobuild-academy-queue').find('span:last');
-    
-    if ($count.length) $count.text(rQueue.length);
-    
-    if ($items.length) {
-        if (rQueue.length === 0) {
-            $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;width:100%;">File de recherches vide - Utilisez les boutons "+ FILE" sur les recherches</div>');
-        } else {
-            $items.html(rQueue.map((rid, i) => {
-                return `<div style="width:40px;height:40px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getResearchName(rid)}">
-                    <div class="research_icon research40x40 ${rid}" style="width:36px;height:36px;margin:1px auto;"></div>
-                    <div onclick="event.stopPropagation();GU_Build.removeResearch(${i})" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;display:none;">x</div>
-                </div>`;
-            }).join(''));
-            $items.find('div[title]').hover(function(){ uw.$(this).find('div:last').show(); }, function(){ uw.$(this).find('div:last').hide(); });
-        }
-    }
-}
-
 function addBuildButtons() {
     const $w = uw.$('.gpwindow_content:visible');
     if (!$w.length) return;
@@ -915,50 +845,6 @@ function addBuildButtons() {
         const nextLvl = currentLvl + inRealQueue + inAutoQueue + 1;
 
         $name.append(`<span class="ab-btn" onclick="event.stopPropagation();GU_Build.add('${bid}',${nextLvl})" style="background:linear-gradient(145deg,#D4AF37,#8B6914);border:1px solid #FFD700;color:#1a1408;font-size:8px;font-weight:bold;padding:2px 5px;margin-left:4px;cursor:pointer;border-radius:3px;">+ FILE</span>`);
-    });
-}
-
-function addResearchButtons() {
-    const $w = uw.$('.gpwindow_content:visible');
-    if (!$w.length) return;
-    const isAcademy = $w.find('.research_technology, .research_list, [class*="academy"]').length > 0;
-    if (!isAcademy) return;
-
-    $w.find('.research_technology, .research').each(function() {
-        const $el = uw.$(this);
-        if ($el.find('.ab-research-btn').length) return;
-
-        let rid = $el.attr('data-research_id');
-        if (!rid) {
-            const classes = $el.attr('class') || '';
-            for (const id of RESEARCH_IDS) {
-                if (classes.includes(id)) {
-                    rid = id;
-                    break;
-                }
-            }
-        }
-        if (!rid) {
-            const $icon = $el.find('.research_icon');
-            const iconClasses = $icon.attr('class') || '';
-            for (const id of RESEARCH_IDS) {
-                if (iconClasses.includes(id)) {
-                    rid = id;
-                    break;
-                }
-            }
-        }
-        if (!rid) return;
-
-        const tid = uw.Game.townId;
-        const researchState = getTownResearchState(tid);
-        const isResearched = researchState[rid] === true;
-        const inQueue = (buildData.researchQueues && buildData.researchQueues[tid] || []).includes(rid);
-
-        if (isResearched || inQueue) return;
-
-        const $target = $el.find('.name, .title').first().length ? $el.find('.name, .title').first() : $el;
-        $target.append(`<span class="ab-research-btn" onclick="event.stopPropagation();GU_Build.addResearch('${rid}')" style="background:linear-gradient(145deg,#D4AF37,#8B6914);border:1px solid #FFD700;color:#1a1408;font-size:8px;font-weight:bold;padding:2px 5px;margin-left:4px;cursor:pointer;border-radius:3px;display:inline-block;z-index:10;position:relative;">+ FILE</span>`);
     });
 }
 
@@ -1129,6 +1015,7 @@ function refreshTemplateSelect(selectName) {
     if (selectName && names.includes(selectName)) sel.value = selectName;
 }
 
+// Lit les niveaux actuels des batiments d'une ville via l'API du jeu.
 function getTownBuildingLevels(tid) {
     try {
         const town = uw.ITowns.getTown(tid);
@@ -1140,6 +1027,7 @@ function getTownBuildingLevels(tid) {
     }
 }
 
+// Calcule les niveaux "projetes" d'une ville : niveau reel + constructions en cours + file auto-build.
 function computeProjectedLevels(tid) {
     const levels = getTownBuildingLevels(tid);
     try {
@@ -1157,6 +1045,9 @@ function computeProjectedLevels(tid) {
     return levels;
 }
 
+// Applique un template a la ville actuellement selectionnee : calcule tous les niveaux
+// manquants (batiment cible + tous ses prerequis en cascade) et les ajoute a la file dans
+// le bon ordre de dependance.
 function getTownResearchState(tid){
     try{
         const attrs=uw.MM?.getModelsForClass?.('Researches')?.[tid]?.attributes;
@@ -1213,6 +1104,8 @@ function applyTemplateToTown(templateName){
     log('BUILD',`Template "${templateName}" applique: ${parts.join(' + ')} (prerequis inclus)`,'success');
     if(buildData.enabled){processTownQueue(tid);processTownResearchQueue(tid);}
 }
+
+// ============================================================================
 
 function startTimer() {
     setInterval(() => {
