@@ -207,7 +207,7 @@ const REQUIREMENTS = {};
 let buildData = {
     enabled: false,
     gratisEnabled: false,
-    settings: { interval: 2, webhook: '', humanizer: true, humanizerMinDelay: 1000, humanizerMaxDelay: 2000, humanizerTownMinDelay: 2500, humanizerTownMaxDelay: 4500 },
+    settings: { interval: 10, webhook: '', humanizer: true, humanizerMinDelay: 1000, humanizerMaxDelay: 2000, humanizerTownMinDelay: 1200, humanizerTownMaxDelay: 2400 },
     stats: { built: 0, gratisClaimed: 0 },
     queues: {},
     researchQueues: {},
@@ -374,9 +374,10 @@ module.render = function(container) {
                 <div class="option-group">
                     <span class="option-label">Intervalle de verification</span>
                     <select class="option-select" id="build-interval">
-                        <option value="2">2 minutes</option>
                         <option value="5">5 minutes</option>
                         <option value="10">10 minutes</option>
+                        <option value="20">20 minutes</option>
+                        <option value="40">40 minutes</option>
                     </select>
                 </div>
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;">
@@ -920,9 +921,9 @@ async function openTownControlPagesHumanized(tid){
     if(!(await switchToTownHumanized(tid))) return false;
     await sleep(humanActionDelay());
     openSenateWindowHumanized();
-    await sleep(randomDelay(buildData.settings.humanizer===false?250:450,buildData.settings.humanizer===false?500:900));
+    await sleep(randomDelay(buildData.settings.humanizer===false?200:300,buildData.settings.humanizer===false?450:650));
     if(uw.AcademyWindowFactory?.openAcademyWindow){
-        try{ uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(buildData.settings.humanizer===false?250:450,buildData.settings.humanizer===false?500:900)); }catch(e){}
+        try{ uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(buildData.settings.humanizer===false?200:300,buildData.settings.humanizer===false?450:650)); }catch(e){}
     }
     return true;
 }
@@ -963,48 +964,115 @@ async function processTownActionQueue(tid){
     if(!q.length) return {blocked:false, reason:'empty'};
     processingTownId=String(tid);
     if(!(await openTownControlPagesHumanized(tid))) return {blocked:true, reason:'ouverture de ville impossible'};
+
+    // Les recherches bloquées (niveau d'académie insuffisant OU autre échec de lancement)
+    // sont temporairement ignorées pendant cette routine. Elles restent à leur place dans q
+    // et seront impérativement retentées en tête de file à la prochaine routine.
+    const skippedResearch = new Set();
+
     while(buildData.enabled && q.length){
-        const town=uw.ITowns.getTown(tid); if(!town) break;
-        const action=q[0];
+        // Cherche la première action encore tentable pendant cette routine.
+        let actionIndex=-1;
+        for(let i=0;i<q.length;i++){
+            const candidate=q[i];
+            if(candidate?.type==='research' && skippedResearch.has(candidate)) continue;
+            actionIndex=i;
+            break;
+        }
+
+        // Il ne reste que des recherches temporairement bloquées : on passe à la ville suivante.
+        if(actionIndex<0){
+            saveData(); updateQueueDisplay(); refreshSenateQueue();
+            return {blocked:true, reason:'recherches temporairement bloquées pour cette routine'};
+        }
+
+        const action=q[actionIndex];
+        const town=uw.ITowns.getTown(tid);
+        if(!town){
+            saveData();
+            return {blocked:true, reason:'ville introuvable'};
+        }
+
         if(action.type==='building'){
             let orders=[]; try{orders=town.buildingOrders?.()||[];}catch(e){}
             const max=uw.GameDataPremium?.isAdvisorActivated?.('curator')?7:2;
-            if(orders.length>=max){ log('BUILD',`${town.getName?.()||tid}: file de construction pleine (${orders.length}/${max})`,'info'); saveData(); updateQueueDisplay(); refreshSenateQueue(); return {blocked:true, reason:'file de construction pleine'}; }
+            if(orders.length>=max){
+                log('BUILD',`${town.getName?.()||tid}: file de construction pleine (${orders.length}/${max})`,'info');
+                saveData(); updateQueueDisplay(); refreshSenateQueue();
+                return {blocked:true, reason:'file de construction pleine'};
+            }
             await sleep(humanActionDelay());
             let ok=false;
             if(action.mode==='demolish') ok=await demolishBuildingPromise(tid,action.buildingId,action.level);
             else ok=await buildUpPromise(tid,action.buildingId);
-            if(!ok){ log('BUILD',`${town.getName?.()||tid}: impossible de ${action.mode==='demolish'?'démolir':'construire'} ${getBuildingName(action.buildingId)} (niveau cible ${action.level})`,'info'); saveData(); updateQueueDisplay(); refreshSenateQueue(); return {blocked:true, reason:'construction/démolition impossible (ressources ou conditions)'}; }
-            q.shift();
+            if(!ok){
+                log('BUILD',`${town.getName?.()||tid}: impossible de ${action.mode==='demolish'?'démolir':'construire'} ${getBuildingName(action.buildingId)} (niveau cible ${action.level})`,'info');
+                saveData(); updateQueueDisplay(); refreshSenateQueue();
+                return {blocked:true, reason:'construction/démolition impossible (ressources ou conditions)'};
+            }
+            q.splice(actionIndex,1);
             if(buildData.queues[tid]?.length){
                 const idx=buildData.queues[tid].findIndex(x=>x.buildingId===action.buildingId && x.level===action.level);
                 if(idx>=0) buildData.queues[tid].splice(idx,1);
             }
             buildData.stats.built++; saveData(); updateStats(); updateQueueDisplay(); refreshSenateQueue();
             log('BUILD',`${town.getName?.()||tid}: ${action.mode==='demolish'?'Démolition '+getBuildingName(action.buildingId)+' → niv.'+action.level:getBuildingName(action.buildingId)+' niv.'+action.level}`,'success');
-        } else if(action.type==='research'){
+            continue;
+        }
+
+        if(action.type==='research'){
             const researched=getTownResearchState(tid);
-            if(researched[action.rid]===true){ q.shift(); continue; }
+            if(researched[action.rid]===true){
+                q.splice(actionIndex,1);
+                continue;
+            }
+
             const academy=(town.getBuildings&&town.getBuildings().getBuildings())?.academy||0;
-            if(academy<getResearchAcademyLevel(action.rid)){ log('BUILD',`${town.getName?.()||tid}: Académie insuffisante pour ${getResearchName(action.rid)}`,'info'); saveData(); return {blocked:true, reason:'recherche impossible (Académie insuffisante)'}; }
+            const neededAcademy=getResearchAcademyLevel(action.rid);
+
+            if(academy<neededAcademy){
+                skippedResearch.add(action);
+                log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} retardée (Académie ${academy}/${neededAcademy}) → tentative des actions suivantes`,'info');
+                continue;
+            }
+
             await sleep(humanActionDelay());
-            if(uw.AcademyWindowFactory?.openAcademyWindow){ try{uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(500,1000));}catch(e){} }
+            if(uw.AcademyWindowFactory?.openAcademyWindow){
+                try{uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(350,750));}catch(e){}
+            }
             const selectors=[`div[data-research_id*="${action.rid}"]`,`[data-research_id="${action.rid}"]`,`.research_icon.research.${action.rid}`,`.research_technology.${action.rid}`,`.research.${action.rid}`];
             let $candidate=null;
             for(const sel of selectors){const $el=uw.$(sel).filter(':visible');if($el&&$el.length){$candidate=$el.first();break;}}
-            if(!$candidate||!$candidate.length){ log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} introuvable dans l\'Académie`,'info'); saveData(); return {blocked:true, reason:'recherche impossible à lancer'}; }
+
+            // Quel que soit le motif de l'échec du lancement, on n'abandonne plus immédiatement
+            // la ville : la recherche est temporairement ignorée et on tente la suivante.
+            if(!$candidate||!$candidate.length){
+                skippedResearch.add(action);
+                log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} impossible à lancer maintenant → tentative des actions suivantes`,'info');
+                continue;
+            }
+
             const $button=$candidate.closest('button,.btn,.research_technology,.research').first();
             ($button.length?$button:$candidate).click();
-            await sleep(buildData.settings.humanizer===false?700:randomDelay(900,1800));
+            await sleep(buildData.settings.humanizer===false?600:randomDelay(800,1500));
             const after=getTownResearchState(tid);
-            if(after[action.rid]===true){ q.shift(); saveData(); updateStats(); log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} lancée`,'success'); }
-            else { saveData(); updateQueueDisplay(); return {blocked:true, reason:'recherche impossible à lancer (clic non confirmé)'}; }
-        } else q.shift();
+            if(after[action.rid]===true){
+                q.splice(actionIndex,1);
+                saveData(); updateStats();
+                log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} lancée`,'success');
+            }else{
+                skippedResearch.add(action);
+                log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} non confirmée → tentative des actions suivantes`,'info');
+            }
+            continue;
+        }
+
+        q.splice(actionIndex,1);
     }
+
     saveData(); updateQueueDisplay(); refreshSenateQueue();
     return {blocked:false, reason:'termine'};
 }
-
 async function processTownQueue(tid){
     return processTownActionQueue(tid);
 }
@@ -1621,7 +1689,9 @@ function loadData() {
             if (!buildData.researchQueues) buildData.researchQueues = {};
             if (!buildData.actionQueues) buildData.actionQueues = {};
             if (!buildData.activeTemplates) buildData.activeTemplates = {};
-            buildData.settings = { interval: 2, webhook: '', humanizer: true, humanizerMinDelay: 1000, humanizerMaxDelay: 2000, humanizerTownMinDelay: 2500, humanizerTownMaxDelay: 4500, ...(buildData.settings||{}) };
+            buildData.settings = { interval: 10, webhook: '', humanizer: true, humanizerMinDelay: 1000, humanizerMaxDelay: 2000, humanizerTownMinDelay: 1200, humanizerTownMaxDelay: 2400, ...(buildData.settings||{}) };
+            const allowedIntervals=[5,10,20,40];
+            if(!allowedIntervals.includes(Number(buildData.settings.interval))) buildData.settings.interval=10;
             Object.values(buildData.templates).forEach(t=>Object.keys(t||{}).forEach(k=>{if((RESEARCH_FALLBACK[k]||getResearchData(k))&&!k.startsWith(RESEARCH_KEY_PREFIX)){t[RESEARCH_KEY_PREFIX+k]=t[k];delete t[k];}}));
         } catch(e) {}
     }
