@@ -824,7 +824,7 @@ async function buildUpPromise(tid,bid){
             return String(id)===String(bid);
         }).length||0; }catch(e){}
 
-        return after>before || (!callbackDone ? false : false);
+        return after>before;
     }catch(e){
         log('BUILD',`Erreur lancement ${getBuildingName(bid)}: ${e.message}`,'error');
         return false;
@@ -1728,3 +1728,7 @@ function loadData() {
             buildData.settings = { interval: 10, webhook: '', humanizer: true, humanizerMinDelay: 1000, humanizerMaxDelay: 2000, humanizerTownMinDelay: 1200, humanizerTownMaxDelay: 2400, ...(buildData.settings||{}) };
             const allowedIntervals=[5,10,20,40];
             if(!allowedIntervals.includes(Number(buildData.settings.interval))) buildData.settings.interval=10;
+            Object.values(buildData.templates).forEach(t=>Object.keys(t||{}).forEach(k=>{if((RESEARCH_FALLBACK[k]||getResearchData(k))&&!k.startsWith(RESEARCH_KEY_PREFIX)){t[RESEARCH_KEY_PREFIX+k]=t[k];delete t[k];}}));
+        } catch(e) {}
+    }
+}
