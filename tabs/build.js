@@ -715,19 +715,38 @@ function syncTemplateUIForCurrentTown(force=false){
 }
 
 async function switchToTownHumanized(tid){
-    if(String(uw.Game?.townId)===String(tid)) return true;
+    tid=String(tid);
+    if(String(uw.Game?.townId)===tid) return true;
     try{
-        if(uw.HelperTown?.switchToTown){
-            await uw.HelperTown.switchToTown(tid);
-            await sleep(humanTownDelay());
-            return String(uw.Game?.townId)===String(tid);
+        // Grepolis/GrepoAuto expose actuellement le changement de ville via
+        // HelperTown.townSwitch(). L'ancien switchToTown() peut ne pas exister.
+        let switched=false;
+        if(typeof uw.HelperTown?.townSwitch==='function'){
+            await uw.HelperTown.townSwitch(Number(tid));
+            switched=true;
+        }else if(typeof uw.HelperTown?.switchToTown==='function'){
+            await uw.HelperTown.switchToTown(Number(tid));
+            switched=true;
+        }else if(typeof uw.ITowns?.setCurrentTown==='function'){
+            uw.ITowns.setCurrentTown(Number(tid));
+            switched=true;
         }
-        const town=uw.ITowns.getTown(tid);
-        if(town && uw.ITowns.setCurrentTown){
-            uw.ITowns.setCurrentTown(tid);
-            await sleep(humanTownDelay());
-            return String(uw.Game?.townId)===String(tid);
+        if(!switched){
+            log('BUILD',`Impossible de passer a la ville ${tid}: aucune methode de changement de ville disponible`,'error');
+            return false;
         }
+
+        // Attendre que Grepolis ait réellement changé Game.townId avant
+        // d'ouvrir le Sénat/Académie de la nouvelle ville.
+        const timeout=Date.now()+Math.max(5000,humanTownDelay()+3500);
+        while(Date.now()<timeout){
+            if(String(uw.Game?.townId)===tid){
+                await sleep(humanTownDelay());
+                return String(uw.Game?.townId)===tid;
+            }
+            await sleep(150);
+        }
+        log('BUILD',`Changement vers la ville ${tid} non confirme (ville actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
     }catch(e){ log('BUILD',`Impossible de passer a la ville ${tid}: ${e.message}`,'error'); }
     return false;
 }
