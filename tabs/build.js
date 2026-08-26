@@ -718,10 +718,10 @@ function syncTemplateUIForCurrentTown(force=false){
 async function switchToTownHumanized(tid){
     tid=String(tid);
     if(String(uw.Game?.townId)===tid) return true;
+    if(!uw.ITowns?.getTown?.(Number(tid))) return false;
     try{
-        // Grepolis/GrepoAuto expose actuellement le changement de ville via
-        // HelperTown.townSwitch(). L'ancien switchToTown() peut ne pas exister.
         let switched=false;
+        // API native de changement de ville utilisée par Grepolis/GrepoAuto.
         if(typeof uw.HelperTown?.townSwitch==='function'){
             await uw.HelperTown.townSwitch(Number(tid));
             switched=true;
@@ -733,22 +733,27 @@ async function switchToTownHumanized(tid){
             switched=true;
         }
         if(!switched){
-            log('BUILD',`Impossible de passer a la ville ${tid}: aucune methode de changement de ville disponible`,'error');
+            log('BUILD',`Impossible de passer a la ville ${tid}: aucune methode native disponible`,'error');
             return false;
         }
 
-        // Attendre que Grepolis ait réellement changé Game.townId avant
-        // d'ouvrir le Sénat/Académie de la nouvelle ville.
-        const timeout=Date.now()+Math.max(5000,humanTownDelay()+3500);
+        // Le changement est asynchrone. On vérifie réellement Game.townId
+        // et la ville courante ITowns avant d'ouvrir Sénat/Académie.
+        const timeout=Date.now()+7000;
         while(Date.now()<timeout){
-            if(String(uw.Game?.townId)===tid){
-                await sleep(humanTownDelay());
+            const current=String(uw.Game?.townId||'');
+            const currentTown=uw.ITowns?.getCurrentTown?.();
+            const currentId=currentTown?.id!=null?String(currentTown.id):current;
+            if(current===tid && currentId===tid && uw.ITowns?.getTown?.(Number(tid))){
+                await sleep(buildData.settings.humanizer===false?250:randomDelay(450,850));
                 return String(uw.Game?.townId)===tid;
             }
-            await sleep(150);
+            await sleep(120);
         }
-        log('BUILD',`Changement vers la ville ${tid} non confirme (ville actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
-    }catch(e){ log('BUILD',`Impossible de passer a la ville ${tid}: ${e.message}`,'error'); }
+        log('BUILD',`Changement vers la ville ${tid} non confirmé (ville actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
+    }catch(e){
+        log('BUILD',`Impossible de passer a la ville ${tid}: ${e.message}`,'error');
+    }
     return false;
 }
 
@@ -1058,18 +1063,24 @@ async function processTownActionQueue(tid){
             }
 
             const $button=$candidate.closest('button,.btn,.research_technology,.research').first();
-            ($button.length?$button:$candidate).click();
-            await sleep(buildData.settings.humanizer===false?600:randomDelay(800,1500));
-            const after=getTownResearchState(tid);
-
-            if(after[action.rid]===true){
-                q.splice(actionIndex,1);
-                saveData(); updateStats();
-                log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} lancée`,'success');
-            }else{
+            // Comme pour les constructions : dès que le clic de lancement a réussi,
+            // la recherche est retirée de la file d'exécution. On n'attend pas que
+            // le modèle Researches soit rafraîchi par Grepolis pour continuer.
+            try{
+                ($button.length?$button:$candidate).click();
+            }catch(e){
                 skippedResearchIds.add(String(action.rid));
-                log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} non confirmée → tentative des actions suivantes`,'info');
+                log('BUILD',`${town.getName?.()||tid}: clic impossible pour ${getResearchName(action.rid)} → tentative des actions suivantes`,'info');
+                continue;
             }
+            q.splice(actionIndex,1);
+            if(buildData.researchQueues?.[tid]){
+                const ri=buildData.researchQueues[tid].indexOf(action.rid);
+                if(ri>=0) buildData.researchQueues[tid].splice(ri,1);
+            }
+            saveData(); updateStats(); updateQueueDisplay(); refreshSenateQueue();
+            log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} lancée`,'success');
+            await sleep(buildData.settings.humanizer===false?500:randomDelay(650,1100));
             continue;
         }
 
@@ -1612,7 +1623,15 @@ async function processTownResearchQueue(tid){
         ($button.length?$button:$candidate).click();
         await sleep(buildData.settings.humanizer===false?700:randomDelay(900,1800));
         const after=getTownResearchState(tid);
-        if(after[rid]===true){queue.shift();saveData();updateStats();log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(rid)} lancee`,'success');}
+        if(after[rid]===true){
+            queue.shift();
+            if(buildData.actionQueues?.[tid]){
+                const ai=buildData.actionQueues[tid].findIndex(a=>a.type==='research'&&a.rid===rid);
+                if(ai>=0) buildData.actionQueues[tid].splice(ai,1);
+            }
+            saveData(); updateStats(); updateQueueDisplay(); refreshSenateQueue();
+            log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(rid)} lancee`,'success');
+        }
     }catch(e){log('BUILD',`${town.getName?.()||tid}: impossible de lancer ${getResearchName(rid)}: ${e.message}`,'error');}
 }
 
@@ -1702,4 +1721,3 @@ function loadData() {
             Object.values(buildData.templates).forEach(t=>Object.keys(t||{}).forEach(k=>{if((RESEARCH_FALLBACK[k]||getResearchData(k))&&!k.startsWith(RESEARCH_KEY_PREFIX)){t[RESEARCH_KEY_PREFIX+k]=t[k];delete t[k];}}));
         } catch(e) {}
     }
-}
