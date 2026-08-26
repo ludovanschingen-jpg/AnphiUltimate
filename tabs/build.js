@@ -334,6 +334,15 @@ module.render = function(container) {
                         🗑️
                     </button>
                 </div>
+                <div style="margin-top:8px;">
+                    <button id="tpl-apply-all-btn"
+                        style="width:100%; background:linear-gradient(145deg,#9575CD,#4A2E7A); border:1px solid #D1C4E9; color:#F5F0FF; font-weight:bold; padding:8px 12px; border-radius:4px; cursor:pointer; font-size:11px;">
+                        🌍 Appliquer a TOUTES mes villes
+                    </button>
+                    <div style="font-size:9px;color:#8B8B83;margin-top:4px;text-align:center;">
+                        Applique le template selectionne a chacune de vos villes (chacune reçoit son propre plan calcule selon ses niveaux actuels).
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -507,6 +516,12 @@ module.init = function() {
         const name = sel.value;
         if (!name) { log('BUILD', 'Selectionnez un template a appliquer', 'error'); return; }
         applyTemplateToTown(name);
+    };
+    document.getElementById('tpl-apply-all-btn').onclick = () => {
+        const sel = document.getElementById('tpl-select');
+        const name = sel.value;
+        if (!name) { log('BUILD', 'Selectionnez un template a appliquer', 'error'); return; }
+        applyTemplateToAllTowns(name);
     };
     document.getElementById('tpl-reset-btn').onclick = resetCurrentTemplateUI;
     document.getElementById('tpl-select').onchange = (e) => {
@@ -1049,6 +1064,7 @@ async function processAllQueues(){
             if(!q.length){
                 // Rien à faire pour cette ville (pas de template actif ou file
                 // déjà entièrement traitée) : on passe directement à la suivante.
+                log('BUILD',`${townLabel}: ignoree (${templateName?'template "'+templateName+'" deja termine':'aucun template actif — utilisez "Appliquer a TOUTES mes villes"'})`,'info');
                 continue;
             }
 
@@ -1774,6 +1790,43 @@ function applyTemplateToTown(templateName){
     updateStats(); updateQueueDisplay(); injectSenateQueue(); refreshSenateQueue();
     if(!plan.length){log('BUILD',`Template "${templateName}": aucune action à exécuter`,'info');return;}
     log('BUILD',`Template "${templateName}" chargé : ${plan.length} action(s) dans l'ordre exact`,'success');
+    if(buildData.enabled) processAllQueues();
+}
+
+// Applique le même template à TOUTES les villes possédées en une seule fois.
+// Chaque ville reçoit son propre plan d'actions, calculé individuellement
+// selon ses niveaux de bâtiments/recherches actuels (queuePlanForTown est
+// appelé séparément pour chaque tid). Sans cela, le template n'étant appliqué
+// qu'à la ville actuellement affichée, toutes les autres villes n'ont aucune
+// action en file et sont silencieusement ignorées par la routine — ce qui
+// donne l'impression que le bot ne change jamais de ville.
+function applyTemplateToAllTowns(templateName){
+    const template=buildData.templates[templateName];
+    if(!template){log('BUILD',`Template "${templateName}" introuvable`,'error');return;}
+
+    const towns=getAllOwnedTownIds();
+    if(!towns.length){log('BUILD','Aucune ville trouvee','error');return;}
+
+    if(!buildData.actionQueues) buildData.actionQueues={};
+    if(!buildData.activeTemplates) buildData.activeTemplates={};
+
+    let totalActions=0, townsWithActions=0;
+    towns.forEach(tid=>{
+        const plan=queuePlanForTown(tid,template);
+        buildData.activeTemplates[String(tid)]=templateName;
+        buildData.actionQueues[tid]=plan;
+        buildData.queues[tid]=(plan.filter(a=>a.type==='building')).map(a=>({buildingId:a.buildingId,level:a.level}));
+        buildData.researchQueues[tid]=(plan.filter(a=>a.type==='research')).map(a=>a.rid);
+        if(plan.length){ totalActions+=plan.length; townsWithActions++; }
+    });
+
+    saveData();
+    lastTemplateUiTownId=null;
+    syncTemplateUIForCurrentTown(true);
+    renderExecutionQueuePreview();
+    updateStats(); updateQueueDisplay(); injectSenateQueue(); refreshSenateQueue();
+
+    log('BUILD',`Template "${templateName}" applique a ${towns.length} ville(s) — ${townsWithActions} ville(s) avec des actions a effectuer (${totalActions} action(s) au total)`,'success');
     if(buildData.enabled) processAllQueues();
 }
 
