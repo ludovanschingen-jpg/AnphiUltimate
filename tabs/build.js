@@ -717,43 +717,31 @@ function syncTemplateUIForCurrentTown(force=false){
 
 async function switchToTownHumanized(tid){
     tid=String(tid);
-    if(String(uw.Game && uw.Game.townId || '')===tid){
+    const current=String(uw.Game?.townId||'');
+    if(current===tid){
         try{ syncTemplateUIForCurrentTown(true); }catch(e){}
         return true;
     }
+    if(!(uw.HelperTown && typeof uw.HelperTown.townSwitch==='function')){
+        log('BUILD','HelperTown.townSwitch() indisponible: changement de ville annule','error');
+        return false;
+    }
     try{
-        if(uw.HelperTown && typeof uw.HelperTown.townSwitch==='function'){
-            await uw.HelperTown.townSwitch(Number(tid));
-        }else if(uw.HelperTown && typeof uw.HelperTown.switchToTown==='function'){
-            await uw.HelperTown.switchToTown(Number(tid));
-        }else if(uw.ITowns && typeof uw.ITowns.setCurrentTown==='function'){
-            uw.ITowns.setCurrentTown(Number(tid));
-        }else{
-            log('BUILD', 'Aucune méthode de changement de ville disponible', 'error');
-            return false;
-        }
-
+        log('BUILD',`Changement de ville ${current||'?'} → ${tid}`,'info');
+        await uw.HelperTown.townSwitch(Number(tid));
         const deadline=Date.now()+7000;
         while(Date.now()<deadline){
-            const gameTown=String(uw.Game && uw.Game.townId || '');
-            const currentTown=uw.ITowns && typeof uw.ITowns.getCurrentTown==='function' ? uw.ITowns.getCurrentTown() : null;
-            const currentId=currentTown && currentTown.id!==undefined ? String(currentTown.id) : '';
-            if(gameTown===tid || currentId===tid){
-                if(gameTown!==tid && uw.ITowns && typeof uw.ITowns.setCurrentTown==='function'){
-                    try{ uw.ITowns.setCurrentTown(Number(tid)); }catch(e){}
-                    await sleep(150);
-                }
-                if(String(uw.Game && uw.Game.townId || '')===tid){
-                    await sleep(humanTownDelay());
-                    try{ syncTemplateUIForCurrentTown(true); }catch(e){}
-                    return true;
-                }
+            if(String(uw.Game?.townId||'')===tid){
+                await sleep(humanTownDelay());
+                try{ syncTemplateUIForCurrentTown(true); }catch(e){}
+                log('BUILD',`Ville ${tid} confirmée`,'success');
+                return true;
             }
             await sleep(150);
         }
-        log('BUILD', 'Changement vers la ville '+tid+' non confirme (ville actuelle: '+String(uw.Game && uw.Game.townId || 'inconnue')+')', 'error');
+        log('BUILD',`Échec changement ville ${current||'?'} → ${tid} (ville actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
     }catch(e){
-        log('BUILD', 'Impossible de passer a la ville '+tid+': '+e.message, 'error');
+        log('BUILD',`Erreur HelperTown.townSwitch(${tid}): ${e.message}`,'error');
     }
     return false;
 }
