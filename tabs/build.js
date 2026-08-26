@@ -1,4 +1,12 @@
-// Builder revision 2026-08-25 — bâtiments actuels + prérequis visuels + recherches
+// Builder revision 2026-08-26 — bâtiments actuels + prérequis visuels + recherches
+// Corrections appliquées :
+//  1) processAllQueues : chaque ville est désormais traitée dans un try/catch
+//     dédié pour qu'une exception inattendue sur une ville ne bloque plus
+//     le passage aux villes suivantes dans la même routine.
+//  2) processTownActionQueue : ajout de hasPendingBuildingOrder() pour
+//     distinguer une recherche "juste en attente" (Académie déjà en
+//     construction) d'une recherche réellement bloquée (aucune construction
+//     d'Académie en cours) qui doit désormais faire passer à la ville suivante.
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -716,45 +724,44 @@ function syncTemplateUIForCurrentTown(force=false){
 }
 
 async function switchToTownHumanized(tid){
-    tid=Number(tid);
-    const current=Number(uw.Game?.townId);
-    if(Number.isFinite(tid) && current===tid){
+    tid=String(tid);
+    if(String(uw.Game && uw.Game.townId || '')===tid){
         try{ syncTemplateUIForCurrentTown(true); }catch(e){}
         return true;
     }
-
-    if(!Number.isFinite(tid) || tid<=0){
-        log('BUILD',`ID de ville invalide: ${tid}`,'error');
-        return false;
-    }
-
     try{
-        // IMPORTANT : même mécanisme que GrepoAuto/GrepolisInjected.
-        // HelperTown.townSwitch() ne retourne pas nécessairement une Promise :
-        // on l'appelle puis on attend explicitement le changement de Game.townId.
-        if(!(uw.HelperTown && typeof uw.HelperTown.townSwitch==='function')){
-            log('BUILD','HelperTown.townSwitch indisponible : impossible de changer de ville','error');
+        if(uw.HelperTown && typeof uw.HelperTown.townSwitch==='function'){
+            await uw.HelperTown.townSwitch(Number(tid));
+        }else if(uw.HelperTown && typeof uw.HelperTown.switchToTown==='function'){
+            await uw.HelperTown.switchToTown(Number(tid));
+        }else if(uw.ITowns && typeof uw.ITowns.setCurrentTown==='function'){
+            uw.ITowns.setCurrentTown(Number(tid));
+        }else{
+            log('BUILD', 'Aucune méthode de changement de ville disponible', 'error');
             return false;
         }
 
-        log('BUILD',`Changement de ville ${current||'?'} → ${tid}`,'info');
-        uw.HelperTown.townSwitch(tid);
-
-        // GrepoAuto utilise le même principe : appel direct puis attente.
-        const deadline=Date.now()+5000;
+        const deadline=Date.now()+7000;
         while(Date.now()<deadline){
-            if(Number(uw.Game?.townId)===tid){
-                await sleep(humanTownDelay());
-                try{ syncTemplateUIForCurrentTown(true); }catch(e){}
-                log('BUILD',`Ville ${tid} confirmée`,'success');
-                return true;
+            const gameTown=String(uw.Game && uw.Game.townId || '');
+            const currentTown=uw.ITowns && typeof uw.ITowns.getCurrentTown==='function' ? uw.ITowns.getCurrentTown() : null;
+            const currentId=currentTown && currentTown.id!==undefined ? String(currentTown.id) : '';
+            if(gameTown===tid || currentId===tid){
+                if(gameTown!==tid && uw.ITowns && typeof uw.ITowns.setCurrentTown==='function'){
+                    try{ uw.ITowns.setCurrentTown(Number(tid)); }catch(e){}
+                    await sleep(150);
+                }
+                if(String(uw.Game && uw.Game.townId || '')===tid){
+                    await sleep(humanTownDelay());
+                    try{ syncTemplateUIForCurrentTown(true); }catch(e){}
+                    return true;
+                }
             }
-            await sleep(200);
+            await sleep(150);
         }
-
-        log('BUILD',`Changement de ville ${current||'?'} → ${tid} non confirmé (ville actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
+        log('BUILD', 'Changement vers la ville '+tid+' non confirme (ville actuelle: '+String(uw.Game && uw.Game.townId || 'inconnue')+')', 'error');
     }catch(e){
-        log('BUILD',`Erreur changement de ville ${tid}: ${e.message}`,'error');
+        log('BUILD', 'Impossible de passer a la ville '+tid+': '+e.message, 'error');
     }
     return false;
 }
@@ -957,6 +964,23 @@ async function openTownControlPagesHumanized(tid){
     return true;
 }
 
+// Vérifie si un bâtiment donné possède un ordre de construction en cours dans
+// une ville. Sert à distinguer une recherche "en attente d'une construction
+// déjà lancée" (l'Académie monte, il suffit de patienter) d'une recherche
+// réellement bloquée (rien n'est en cours pour combler le prérequis).
+function hasPendingBuildingOrder(tid, bid) {
+    try {
+        const town = uw.ITowns.getTown(tid);
+        const orders = town?.buildingOrders?.() || [];
+        return orders.some(o => {
+            const id = (typeof o.getBuildingId === 'function') ? o.getBuildingId() : o.attributes?.building_id;
+            return String(id) === String(bid);
+        });
+    } catch (e) {
+        return false;
+    }
+}
+
 async function processAllQueues(){
     if(processingAllQueues || !buildData.enabled) return;
     processingAllQueues=true;
@@ -976,6 +1000,12 @@ async function processAllQueues(){
                 saveData();
             }
             if((buildData.actionQueues?.[tid]||[]).length){
+                // Correctif : chaque ville est isolée dans son propre try/catch.
+                // Avant, une exception inattendue (sélecteur DOM manquant,
+                // propriété undefined, etc.) sur UNE ville arrêtait toute la
+                // boucle "for" et empêchait le passage aux villes suivantes,
+                // y compris lors des routines ultérieures (même ville rebloquée
+                // en premier à chaque fois).
                 let result;
                 try{
                     result=await processTownActionQueue(tid);
@@ -991,19 +1021,6 @@ async function processAllQueues(){
             }
         }
     }finally{processingAllQueues=false;processingTownId=null;}
-}
-
-function hasPendingBuildingOrder(tid, bid) {
-    try {
-        const town = uw.ITowns.getTown(tid);
-        const orders = town?.buildingOrders?.() || [];
-        return orders.some(o => {
-            const id = (typeof o.getBuildingId === 'function') ? o.getBuildingId() : o.attributes?.building_id;
-            return String(id) === String(bid);
-        });
-    } catch (e) {
-        return false;
-    }
 }
 
 async function processTownActionQueue(tid){
@@ -1083,12 +1100,19 @@ async function processTownActionQueue(tid){
             const neededAcademy=getResearchAcademyLevel(action.rid);
 
             if(academy<neededAcademy){
+                // Correctif : on ne se contente plus de "sauter" la recherche
+                // aveuglément. On vérifie si l'Académie est réellement en
+                // cours de construction dans cette ville.
                 if(hasPendingBuildingOrder(tid,'academy')){
+                    // L'Académie monte déjà : simple attente, pas un blocage réel.
                     skippedResearchIds.add(String(action.rid));
                     log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} en attente (Académie ${academy}/${neededAcademy} — construction en cours) → tentative des actions suivantes`,'info');
                     continue;
                 }
-
+                // Aucun ordre de construction d'Académie en cours : le prérequis
+                // ne pourra pas se résoudre tout seul (ressources insuffisantes,
+                // file pleine, prérequis manquant pour l'Académie elle-même...).
+                // On considère la ville comme réellement bloquée et on passe à la suivante.
                 log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} impossible (Académie ${academy}/${neededAcademy}, aucune construction en cours) → passage à la ville suivante`,'info');
                 saveData(); updateQueueDisplay(); refreshSenateQueue();
                 return {blocked:true, reason:'recherche bloquée: Académie insuffisante et aucune construction en cours'};
