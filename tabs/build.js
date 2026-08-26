@@ -716,32 +716,45 @@ function syncTemplateUIForCurrentTown(force=false){
 }
 
 async function switchToTownHumanized(tid){
-    tid=String(tid);
-    const current=String(uw.Game?.townId||'');
-    if(current===tid){
+    tid=Number(tid);
+    const current=Number(uw.Game?.townId);
+    if(Number.isFinite(tid) && current===tid){
         try{ syncTemplateUIForCurrentTown(true); }catch(e){}
         return true;
     }
-    if(!(uw.HelperTown && typeof uw.HelperTown.townSwitch==='function')){
-        log('BUILD','HelperTown.townSwitch() indisponible: changement de ville annule','error');
+
+    if(!Number.isFinite(tid) || tid<=0){
+        log('BUILD',`ID de ville invalide: ${tid}`,'error');
         return false;
     }
+
     try{
+        // IMPORTANT : même mécanisme que GrepoAuto/GrepolisInjected.
+        // HelperTown.townSwitch() ne retourne pas nécessairement une Promise :
+        // on l'appelle puis on attend explicitement le changement de Game.townId.
+        if(!(uw.HelperTown && typeof uw.HelperTown.townSwitch==='function')){
+            log('BUILD','HelperTown.townSwitch indisponible : impossible de changer de ville','error');
+            return false;
+        }
+
         log('BUILD',`Changement de ville ${current||'?'} → ${tid}`,'info');
-        await uw.HelperTown.townSwitch(Number(tid));
-        const deadline=Date.now()+7000;
+        uw.HelperTown.townSwitch(tid);
+
+        // GrepoAuto utilise le même principe : appel direct puis attente.
+        const deadline=Date.now()+5000;
         while(Date.now()<deadline){
-            if(String(uw.Game?.townId||'')===tid){
+            if(Number(uw.Game?.townId)===tid){
                 await sleep(humanTownDelay());
                 try{ syncTemplateUIForCurrentTown(true); }catch(e){}
                 log('BUILD',`Ville ${tid} confirmée`,'success');
                 return true;
             }
-            await sleep(150);
+            await sleep(200);
         }
-        log('BUILD',`Échec changement ville ${current||'?'} → ${tid} (ville actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
+
+        log('BUILD',`Changement de ville ${current||'?'} → ${tid} non confirmé (ville actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
     }catch(e){
-        log('BUILD',`Erreur HelperTown.townSwitch(${tid}): ${e.message}`,'error');
+        log('BUILD',`Erreur changement de ville ${tid}: ${e.message}`,'error');
     }
     return false;
 }
