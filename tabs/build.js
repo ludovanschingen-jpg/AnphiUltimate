@@ -211,6 +211,7 @@ let buildData = {
     stats: { built: 0, gratisClaimed: 0 },
     queues: {},
     researchQueues: {},
+    actionQueues: {},
     templates: {},
     nextCheckTime: 0
 };
@@ -291,8 +292,8 @@ module.render = function(container) {
                 </div>
 
                 <div id="tpl-prereq-preview" style="padding:8px;margin-bottom:12px;background:linear-gradient(180deg,rgba(212,175,55,0.08),rgba(0,0,0,0.22));border:1px solid rgba(212,175,55,0.35);border-radius:6px;">
-                    <div style="font-size:10px;color:#FFD700;margin-bottom:7px;font-family:Cinzel,serif;">Prérequis calculés automatiquement</div>
-                    <div id="tpl-prereq-list" style="display:flex;flex-direction:column;gap:4px;"><div style="font-size:10px;color:#8B8B83;font-style:italic;">Sélectionnez un bâtiment ou une recherche.</div></div>
+                    <div style="font-size:10px;color:#FFD700;margin-bottom:7px;font-family:Cinzel,serif;">📋 File de construction</div>
+                    <div id="tpl-prereq-list" style="display:flex;flex-direction:column;gap:4px;max-height:210px;overflow-y:auto;"><div style="font-size:10px;color:#8B8B83;font-style:italic;">La file apparaîtra ici dans l'ordre exact d'exécution.</div></div>
                 </div>
 
                 <div style="display:flex; gap:6px; margin-bottom:8px;">
@@ -451,12 +452,12 @@ module.init = function() {
         }
     };
 
+    // Les sections du Builder restent ouvertes en permanence.
     document.querySelectorAll('#tab-build .section-header').forEach(h => {
-        h.onclick = () => {
-            h.classList.toggle('collapsed');
-            const c = h.nextElementSibling;
-            if (c) c.style.display = h.classList.contains('collapsed') ? 'none' : 'block';
-        };
+        h.classList.remove('collapsed');
+        const c = h.nextElementSibling;
+        if (c) c.style.display = 'block';
+        h.onclick = (e) => { e.preventDefault(); e.stopPropagation(); };
     });
 
     // --- Templates de construction ---
@@ -465,6 +466,7 @@ module.init = function() {
     initTemplateInputHandlers();
     refreshTemplateSelect();
     refreshTemplatePrerequisites();
+    renderExecutionQueuePreview();
 
     document.getElementById('tpl-save-btn').onclick = saveTemplateFromUI;
     document.getElementById('tpl-delete-btn').onclick = () => {
@@ -489,6 +491,7 @@ module.init = function() {
     };
 
     if (!buildData.researchQueues) buildData.researchQueues = {};
+    if (!buildData.actionQueues) buildData.actionQueues = {};
     if (buildData.enabled) { toggleBuild(true); }
 
     if (buildData.gratisEnabled) {
@@ -691,77 +694,205 @@ function buildUpPromise(tid,bid){
     });
 }
 
+function getOrderedTemplateItems(template){
+    const items=[];
+    Object.keys(template||{}).forEach(key=>{
+        const value=Number(template[key])||0;
+        if(value<=0) return;
+        if(key.startsWith(RESEARCH_KEY_PREFIX)) items.push({type:'research',rid:key.slice(RESEARCH_KEY_PREFIX.length)});
+        else items.push({type:'building',buildingId:key,level:value});
+    });
+    return items;
+}
+
+function ensureActionQueue(tid){
+    if(!buildData.actionQueues) buildData.actionQueues={};
+    if(!buildData.actionQueues[tid]) buildData.actionQueues[tid]=[];
+    return buildData.actionQueues[tid];
+}
+
+function queuePlanForTown(tid, template){
+    const queue=ensureActionQueue(tid);
+    queue.length=0;
+    const projected=computeProjectedLevels(tid);
+    const visiting=new Set();
+    const queuedResearch=new Set();
+    const pushBuilding=(bid,target)=>{
+        target=Number(target)||0;
+        if(!bid||target<=0) return;
+        if(visiting.has(bid)) return;
+        visiting.add(bid);
+        getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>pushBuilding(reqBid,reqLvl));
+        while((projected[bid]||0)<target){
+            const level=(projected[bid]||0)+1;
+            queue.push({type:'building',buildingId:bid,level});
+            projected[bid]=level;
+        }
+        visiting.delete(bid);
+    };
+    const pushResearch=(rid)=>{
+        if(queuedResearch.has(rid)) return;
+        const academyLevel=getResearchAcademyLevel(rid);
+        pushBuilding('academy',academyLevel);
+        queue.push({type:'research',rid});
+        queuedResearch.add(rid);
+    };
+    getOrderedTemplateItems(template).forEach(item=>{
+        if(item.type==='building') pushBuilding(item.buildingId,item.level);
+        else if(item.type==='research' && (getResearchData(item.rid)||RESEARCH_FALLBACK[item.rid])) pushResearch(item.rid);
+    });
+    return queue;
+}
+
+function renderExecutionQueuePreview(){
+    const list=document.getElementById('tpl-prereq-list');
+    if(!list) return;
+    const sel=document.getElementById('tpl-select');
+    let template=null;
+    if(sel?.value && buildData.templates[sel.value]) template=buildData.templates[sel.value];
+    else template=collectTemplateFromUI();
+    const tid=uw.Game.townId;
+    const preview=[];
+    const projected=computeProjectedLevels(tid);
+    const visiting=new Set(), addedResearch=new Set();
+    const pushB=(bid,target,auto=false)=>{
+        if(!bid||!target||visiting.has(bid)) return;
+        visiting.add(bid);
+        getBuildingDependencies(bid).forEach(([r,l])=>pushB(r,l,true));
+        while((projected[bid]||0)<target){
+            projected[bid]=(projected[bid]||0)+1;
+            preview.push({type:'building',buildingId:bid,level:projected[bid],auto});
+        }
+        visiting.delete(bid);
+    };
+    getOrderedTemplateItems(template).forEach(item=>{
+        if(item.type==='building') pushB(item.buildingId,item.level,false);
+        else if(!addedResearch.has(item.rid) && (getResearchData(item.rid)||RESEARCH_FALLBACK[item.rid])){
+            pushB('academy',getResearchAcademyLevel(item.rid),true);
+            preview.push({type:'research',rid:item.rid});
+            addedResearch.add(item.rid);
+        }
+    });
+    if(!preview.length){list.innerHTML='<div style="font-size:10px;color:#8B8B83;font-style:italic;">La file apparaîtra ici dans l\'ordre exact d\'exécution.</div>';return;}
+    list.innerHTML=preview.map((item,i)=>{
+        if(item.type==='research') return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#D4AF37;"><span style="width:20px;text-align:right;color:#8B8B83;">${i+1}.</span><div class="research_icon research40x40 ${item.rid}" style="width:30px;height:30px;flex-shrink:0;"></div><span>${getResearchName(item.rid)}</span><strong style="margin-left:auto;color:#FFD700;">Recherche</strong></div>`;
+        const iconUrl=`https://gpfr.innogamescdn.com/images/game/main/${item.buildingId}.png`;
+        return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#D4AF37;"><span style="width:20px;text-align:right;color:#8B8B83;">${i+1}.</span><div style="width:30px;height:30px;border:1px solid ${item.auto?'#66BB6A':'#8B6914'};border-radius:3px;background:#1a1a14;overflow:hidden;flex-shrink:0;"><div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div></div><span>${getBuildingName(item.buildingId)}</span><strong style="margin-left:auto;color:#FFD700;">niv. ${item.level}</strong>${item.auto?'<span style="color:#81C784;font-size:9px;">préreq.</span>':''}</div>`;
+    }).join('');
+}
+
+function openSenateWindowHumanized(){
+    try{
+        const $candidates=uw.$('.building.main:visible, .building_senate:visible, [data-building_id="main"]:visible, [data-building="main"]:visible');
+        if($candidates.length){ $candidates.first().trigger('click'); return true; }
+        if(uw.GameEvents?.window?.open) { uw.GameEvents.window.open('main'); return true; }
+    }catch(e){log('BUILD',`Impossible d'ouvrir le Sénat: ${e.message}`,'info');}
+    return false;
+}
+
+async function openTownControlPagesHumanized(tid){
+    if(!(await switchToTownHumanized(tid))) return false;
+    await sleep(humanActionDelay());
+    openSenateWindowHumanized();
+    await sleep(randomDelay(buildData.settings.humanizer===false?350:900,buildData.settings.humanizer===false?700:1800));
+    if(uw.AcademyWindowFactory?.openAcademyWindow){
+        try{ uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(buildData.settings.humanizer===false?350:900,buildData.settings.humanizer===false?700:1800)); }catch(e){}
+    }
+    return true;
+}
+
 async function processAllQueues(){
     if(processingAllQueues || !buildData.enabled) return;
     processingAllQueues=true;
     try{
-        const townIds=getQueuedTownIds();
-        for(const tid of townIds){
+        const townIds=Object.keys(buildData.actionQueues||{}).filter(tid=>(buildData.actionQueues[tid]||[]).length).sort((a,b)=>Number(a)-Number(b));
+        for(let i=0;i<townIds.length;i++){
+            const tid=townIds[i];
             if(!buildData.enabled) break;
-            await processTownQueue(tid);
-            await processTownResearchQueue(tid);
-            if(buildData.enabled && tid!==townIds[townIds.length-1]) await sleep(humanTownDelay());
+            await processTownActionQueue(tid);
+            if(buildData.enabled && i<townIds.length-1) await sleep(humanTownDelay());
         }
-    }finally{ processingAllQueues=false; processingTownId=null; }
+    }finally{processingAllQueues=false;processingTownId=null;}
+}
+
+async function processTownActionQueue(tid){
+    if(!buildData.enabled) return;
+    const q=buildData.actionQueues?.[tid]||[];
+    if(!q.length) return;
+    processingTownId=String(tid);
+    if(!(await openTownControlPagesHumanized(tid))) return;
+    while(buildData.enabled && q.length){
+        const town=uw.ITowns.getTown(tid); if(!town) break;
+        const action=q[0];
+        if(action.type==='building'){
+            let orders=[]; try{orders=town.buildingOrders?.()||[];}catch(e){}
+            const max=uw.GameDataPremium?.isAdvisorActivated?.('curator')?7:2;
+            if(orders.length>=max){ log('BUILD',`${town.getName?.()||tid}: file de construction pleine (${orders.length}/${max}), passage a la ville suivante`,'info'); break; }
+            await sleep(humanActionDelay());
+            const ok=await buildUpPromise(tid,action.buildingId);
+            if(!ok){ log('BUILD',`${town.getName?.()||tid}: impossible de lancer ${getBuildingName(action.buildingId)} niv.${action.level} (ressources/prérequis/file), pause pour cette ville`,'info'); break; }
+            q.shift();
+            if(buildData.queues[tid]?.length){
+                const idx=buildData.queues[tid].findIndex(x=>x.buildingId===action.buildingId && x.level===action.level);
+                if(idx>=0) buildData.queues[tid].splice(idx,1);
+            }
+            buildData.stats.built++; saveData(); updateStats(); updateQueueDisplay(); refreshSenateQueue();
+            log('BUILD',`${town.getName?.()||tid}: ${getBuildingName(action.buildingId)} niv.${action.level}`,'success');
+        } else if(action.type==='research'){
+            const researched=getTownResearchState(tid);
+            if(researched[action.rid]===true){ q.shift(); continue; }
+            const academy=(town.getBuildings&&town.getBuildings().getBuildings())?.academy||0;
+            if(academy<getResearchAcademyLevel(action.rid)){ log('BUILD',`${town.getName?.()||tid}: Académie insuffisante pour ${getResearchName(action.rid)}`,'info'); break; }
+            await sleep(humanActionDelay());
+            if(uw.AcademyWindowFactory?.openAcademyWindow){ try{uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(800,1800));}catch(e){} }
+            const selectors=[`div[data-research_id*="${action.rid}"]`,`[data-research_id="${action.rid}"]`,`.research_icon.research.${action.rid}`,`.research_technology.${action.rid}`,`.research.${action.rid}`];
+            let $candidate=null;
+            for(const sel of selectors){const $el=uw.$(sel).filter(':visible');if($el&&$el.length){$candidate=$el.first();break;}}
+            if(!$candidate||!$candidate.length){ log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} introuvable dans l\'Académie`,'info'); break; }
+            const $button=$candidate.closest('button,.btn,.research_technology,.research').first();
+            ($button.length?$button:$candidate).click();
+            await sleep(buildData.settings.humanizer===false?700:randomDelay(1200,2500));
+            const after=getTownResearchState(tid);
+            if(after[action.rid]===true){ q.shift(); saveData(); updateStats(); log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} lancée`,'success'); }
+            else break;
+        } else q.shift();
+    }
+    saveData(); updateQueueDisplay(); refreshSenateQueue();
 }
 
 async function processTownQueue(tid){
-    if(!buildData.enabled) return;
-    const q=buildData.queues[tid]||[];
-    if(!q.length) return;
-    processingTownId=String(tid);
-    const town=uw.ITowns.getTown(tid); if(!town)return;
-    if(!(await switchToTownHumanized(tid))) return;
-    injectSenateQueue();
-    refreshSenateQueue();
-
-    const max=uw.GameDataPremium?.isAdvisorActivated?.('curator') ? 7 : 2;
-    while(buildData.enabled && q.length){
-        const currentTown=uw.ITowns.getTown(tid); if(!currentTown)break;
-        let currentOrders=[];
-        try{ currentOrders=currentTown.buildingOrders?.()||[]; }catch(e){ currentOrders=[]; }
-        if(currentOrders.length>=max){
-            log('BUILD',`${currentTown.getName?.()||tid}: file de construction pleine (${currentOrders.length}/${max}), passage a la ville suivante`,'info');
-            break;
-        }
-        const item=q[0];
-        await sleep(humanActionDelay());
-        const ok=await buildUpPromise(tid,item.buildingId);
-        if(!ok){
-            log('BUILD',`${currentTown.getName?.()||tid}: impossible de lancer ${getBuildingName(item.buildingId)} niv.${item.level} (ressources/prerequis/file), pause pour cette ville`,'info');
-            break;
-        }
-        q.shift();
-        buildData.stats.built++;
-        saveData(); updateStats(); refreshSenateQueue(); updateQueueDisplay();
-        log('BUILD',`${currentTown.getName?.()||tid}: ${getBuildingName(item.buildingId)} niv.${item.level}`,'success');
-    }
-    saveData(); updateStats(); refreshSenateQueue(); updateQueueDisplay();
+    return processTownActionQueue(tid);
 }
 
 function addToQueue(bid, lvl) {
     const tid = uw.Game.townId;
     if (!buildData.queues[tid]) buildData.queues[tid] = [];
+    if (!buildData.actionQueues) buildData.actionQueues = {};
+    if (!buildData.actionQueues[tid]) buildData.actionQueues[tid] = [];
+    const action = { type:'building', buildingId: bid, level: lvl };
     buildData.queues[tid].push({ buildingId: bid, level: lvl });
+    buildData.actionQueues[tid].push(action);
     saveData();
     log('BUILD', `+ ${NAMES[bid]} niv.${lvl}`, 'success');
     refreshSenateQueue();
     updateStats();
     updateQueueDisplay();
     uw.$('.ab-btn').remove();
-    if (buildData.enabled) processTownQueue(tid);
+    if (buildData.enabled) processTownActionQueue(tid);
 }
 
 function removeFromQueue(idx) {
     const tid = uw.Game.townId;
-    if (buildData.queues[tid]) {
-        buildData.queues[tid].splice(idx, 1);
-        saveData();
-        refreshSenateQueue();
-        updateStats();
-        updateQueueDisplay();
-        uw.$('.ab-btn').remove();
+    if (buildData.actionQueues?.[tid]) {
+        const aidx = buildData.actionQueues[tid].findIndex((a, i) => a.type === 'building' && buildData.actionQueues[tid].slice(0,i+1).filter(x=>x.type==='building').length===idx+1);
+        if(aidx>=0) buildData.actionQueues[tid].splice(aidx,1);
     }
+    if (buildData.queues[tid]) buildData.queues[tid].splice(Math.min(idx, buildData.queues[tid].length-1), 1);
+    saveData();
+    refreshSenateQueue();
+    updateStats();
+    updateQueueDisplay();
+    uw.$('.ab-btn').remove();
 }
 
 function startSenateWatcher() {
@@ -781,7 +912,7 @@ function injectSenateQueue() {
     const $bt = uw.$('#building_tasks_main');
     if (!$bt.length) return;
 
-    const queue = buildData.queues[uw.Game.townId] || [];
+    const queue = (buildData.actionQueues?.[uw.Game.townId] || []);
     
     const $parent = $bt.closest('.gpwindow_content');
     if ($parent.length && $parent.css('overflow') !== 'auto') {
@@ -799,7 +930,7 @@ function injectSenateQueue() {
 }
 
 function refreshSenateQueue() {
-    const queue = buildData.queues[uw.Game.townId] || [];
+    const queue = (buildData.actionQueues?.[uw.Game.townId] || []);
     const $items = uw.$('#autobuild-senate-queue .queue-items');
     const $count = uw.$('#autobuild-senate-queue').find('span:last');
     
@@ -810,11 +941,16 @@ function refreshSenateQueue() {
             $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;">File vide - Utilisez les boutons "+ FILE"</div>');
         } else {
             $items.html(queue.map((it, i) => {
+                if(it.type==='research'){
+                    return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #6A8FB5;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getResearchName(it.rid)}">
+                        <div class="research_icon research40x40 ${it.rid}" style="width:38px;height:38px;margin:5px auto 0;"></div>
+                        <span style="position:absolute;bottom:2px;right:2px;background:#315D86;color:#fff;font-weight:bold;font-size:9px;padding:1px 4px;border-radius:3px;">R</span>
+                    </div>`;
+                }
                 const iconUrl = `https://gpfr.innogamescdn.com/images/game/main/${it.buildingId}.png`;
                 return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getBuildingName(it.buildingId)} niv.${it.level}">
                     <div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div>
                     <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
-                    <div onclick="event.stopPropagation();GU_Build.remove(${i})" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;display:none;">x</div>
                 </div>`;
             }).join(''));
             $items.find('div[title]').hover(function(){ uw.$(this).find('div:last').show(); }, function(){ uw.$(this).find('div:last').hide(); });
@@ -871,16 +1007,14 @@ function updateQueueDisplay() {
     const container = document.getElementById('build-queue-display');
     if (!container) return;
     
-    const queue = buildData.queues[uw.Game.townId] || [];
+    const queue = (buildData.actionQueues?.[uw.Game.townId] || []);
     if (queue.length === 0) {
         container.innerHTML = '<div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Senat pour ajouter des constructions</div>';
     } else {
         container.innerHTML = queue.map((it, i) => {
+            if(it.type==='research') return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #6A8FB5;border-radius:4px;position:relative;cursor:pointer;" title="${getResearchName(it.rid)}"><div class="research_icon research40x40 ${it.rid}" style="width:38px;height:38px;margin:5px auto 0;"></div><span style="position:absolute;bottom:2px;right:2px;background:#315D86;color:#fff;font-weight:bold;font-size:9px;padding:1px 4px;border-radius:3px;">R</span></div>`;
             const iconUrl = `https://gpfr.innogamescdn.com/images/game/main/${it.buildingId}.png`;
-            return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;cursor:pointer;" title="${getBuildingName(it.buildingId)} niv.${it.level}">
-                <div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div>
-                <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span>
-            </div>`;
+            return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;cursor:pointer;" title="${getBuildingName(it.buildingId)} niv.${it.level}"><div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div><span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span></div>`;
         }).join('');
     }
 }
@@ -1024,6 +1158,7 @@ function loadTemplateIntoUI(template){
     document.querySelectorAll('.tpl-special-cell').forEach(cell=>{const bid=cell.dataset.bid,selected=!!template[bid];cell.dataset.selected=selected?'1':'0';cell.querySelector('.tpl-special-icon').style.borderColor=selected?'#FFD700':'#4a4a3a';cell.querySelector('.tpl-special-icon div').style.opacity=selected?'1':'0.5';});
     document.querySelectorAll('.tpl-research-cell').forEach(cell=>{const key=RESEARCH_KEY_PREFIX+cell.dataset.rid,selected=!!template[key]||!!template[cell.dataset.rid];cell.dataset.selected=selected?'1':'0';cell.style.opacity=selected?'1':'0.48';cell.style.borderColor=selected?'#FFD700':'#4a4a3a';});
     refreshTemplatePrerequisites(true);
+    renderExecutionQueuePreview();
 }
 
 function resetCurrentTemplateUI(){
@@ -1051,6 +1186,7 @@ function resetCurrentTemplateUI(){
     if(select) select.value='';
 
     refreshTemplatePrerequisites(false);
+    renderExecutionQueuePreview();
     log('BUILD', 'Template en cours réinitialisé', 'info');
 }
 
@@ -1150,41 +1286,21 @@ async function processTownResearchQueue(tid){
 }
 
 function applyTemplateToTown(templateName){
-    const template=buildData.templates[templateName];if(!template){log('BUILD',`Template "${templateName}" introuvable`,'error');return;}
-    const tid=uw.Game.townId,projected=computeProjectedLevels(tid),newItems=[],visiting=new Set();let hadConflict=false;if(!buildData.researchQueues)buildData.researchQueues={};
-    const currentLevel=bid=>projected[bid]||0;
-    function queueLevelUp(bid){const lvl=currentLevel(bid)+1;newItems.push({buildingId:bid,level:lvl});projected[bid]=lvl;}
-    function checkExclusiveGroup(bid){const group=SPECIAL_LEFT.includes(bid)?SPECIAL_LEFT:(SPECIAL_RIGHT.includes(bid)?SPECIAL_RIGHT:null);if(!group)return true;const conflict=group.find(other=>other!==bid&&currentLevel(other)>=1);if(conflict){log('BUILD',`Template: ${getBuildingName(bid)} ignore - ${getBuildingName(conflict)} occupe deja cet emplacement special`,'error');hadConflict=true;return false;}return true;}
-    function ensureLevel(bid,target){
-        target=Number(target)||0;
-        if(!bid||target<=0) return;
-        if(visiting.has(bid)) return;
-        visiting.add(bid);
-        // Les dépendances doivent être vérifiées même si le bâtiment cible
-        // existe déjà : une file partiellement remplie peut encore manquer
-        // un prérequis d'un bâtiment sélectionné dans le template.
-        if(!checkExclusiveGroup(bid)){visiting.delete(bid);return;}
-        getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>ensureLevel(reqBid,reqLvl));
-        while(currentLevel(bid)<target) queueLevelUp(bid);
-        visiting.delete(bid);
-    }
-    Object.keys(template).forEach(key=>{
-        if(key.startsWith(RESEARCH_KEY_PREFIX)) return;
-        const target=Number(template[key])||0;
-        if(target<=0) return;
-        if(!getBuildingMaxLevel(key)) return;
-        const deps=getBuildingDependencies(key);
-        if(deps.length) log('BUILD',`${getBuildingName(key)}: ${deps.map(([id,lvl])=>`${getBuildingName(id)} ${lvl}`).join(', ')}`,'info');
-        ensureLevel(key,target);
-    });
-    const requested=Object.keys(template).filter(k=>k.startsWith(RESEARCH_KEY_PREFIX)).map(k=>k.slice(RESEARCH_KEY_PREFIX.length)).filter(rid=>getResearchData(rid)||RESEARCH_FALLBACK[rid]);
-    const researchState=getTownResearchState(tid);requested.forEach(rid=>{if(researchState[rid]!==true){ensureLevel('academy',getResearchAcademyLevel(rid));queueResearch(tid,rid);}});
-    if(newItems.length){if(!buildData.queues[tid])buildData.queues[tid]=[];buildData.queues[tid].push(...newItems);}
-    saveData(); injectSenateQueue(); refreshSenateQueue(); updateStats(); updateQueueDisplay();
-    const parts=[];if(newItems.length)parts.push(`${newItems.length} construction(s)`);if(requested.length)parts.push(`${requested.length} recherche(s)`);
-    if(!parts.length){log('BUILD',hadConflict?"Template: rien ajoute (conflit d'emplacement special)":'Template: rien a ajouter, niveaux/recherches deja atteints','info');return;}
-    log('BUILD',`Template "${templateName}" applique: ${parts.join(' + ')} (prerequis inclus)`,'success');
-    if(buildData.enabled){processTownQueue(tid);processTownResearchQueue(tid);}
+    const template=buildData.templates[templateName];
+    if(!template){log('BUILD',`Template "${templateName}" introuvable`,'error');return;}
+    const tid=uw.Game.townId;
+    if(!buildData.actionQueues) buildData.actionQueues={};
+    const plan=queuePlanForTown(tid,template);
+    buildData.actionQueues[tid]=plan;
+    // Compatibilité avec l'ancienne file : on la reconstruit à partir du plan.
+    buildData.queues[tid]=(plan.filter(a=>a.type==='building')).map(a=>({buildingId:a.buildingId,level:a.level}));
+    buildData.researchQueues[tid]=(plan.filter(a=>a.type==='research')).map(a=>a.rid);
+    saveData();
+    renderExecutionQueuePreview();
+    updateStats(); updateQueueDisplay(); injectSenateQueue(); refreshSenateQueue();
+    if(!plan.length){log('BUILD',`Template "${templateName}": aucune action à exécuter`,'info');return;}
+    log('BUILD',`Template "${templateName}" chargé : ${plan.length} action(s) dans l'ordre exact`,'success');
+    if(buildData.enabled) processAllQueues();
 }
 
 // ============================================================================
@@ -1218,7 +1334,7 @@ function updateStats() {
     const g = document.getElementById('build-stat-gratis');
     
     if (b) b.textContent = buildData.stats.built;
-    if (q) { const a=Object.values(buildData.queues).reduce((x,q)=>x+q.length,0); const r=Object.values(buildData.researchQueues||{}).reduce((x,q)=>x+q.length,0); q.textContent=a+r; }
+    if (q) { const a=Object.values(buildData.actionQueues||{}).reduce((x,q)=>x+q.length,0); q.textContent=a; }
     if (g) g.textContent = buildData.stats.gratisClaimed;
 }
 
@@ -1230,6 +1346,7 @@ function saveData() {
         stats: buildData.stats,
         queues: buildData.queues,
         researchQueues: buildData.researchQueues || {},
+        actionQueues: buildData.actionQueues || {},
         templates: buildData.templates
     }));
 }
@@ -1242,6 +1359,7 @@ function loadData() {
             buildData = { ...buildData, ...d };
             if (!buildData.templates) buildData.templates = {};
             if (!buildData.researchQueues) buildData.researchQueues = {};
+            if (!buildData.actionQueues) buildData.actionQueues = {};
             buildData.settings = { interval: 2, webhook: '', humanizer: true, humanizerMinDelay: 2200, humanizerMaxDelay: 5200, humanizerTownMinDelay: 3000, humanizerTownMaxDelay: 6000, ...(buildData.settings||{}) };
             Object.values(buildData.templates).forEach(t=>Object.keys(t||{}).forEach(k=>{if((RESEARCH_FALLBACK[k]||getResearchData(k))&&!k.startsWith(RESEARCH_KEY_PREFIX)){t[RESEARCH_KEY_PREFIX+k]=t[k];delete t[k];}}));
         } catch(e) {}
