@@ -1,3 +1,17 @@
+// ==UserScript==
+// @name         Grepolis Ultimate Bot
+// @namespace    http://tampermonkey.net/
+// @version      2.3.0
+// @description  Bot pour Grepolis (AnphiUltimate)
+// @author       Anphi / Ludo
+// @match        *://*.grepolis.com/game/*
+// @grant        GM_xmlhttpRequest
+// @grant        GM_addStyle
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @connect      anphidet.github.io
+// ==/UserScript==
+
 (function() {
     'use strict';
 
