@@ -221,6 +221,7 @@ let senateWatcherInterval = null;
 let gratisInterval = null;
 let fillInterval = null;
 let templateEditOrder = [];
+let lastTemplateUiTownId = null;
 
 module.render = function(container) {
     container.innerHTML = `
@@ -480,6 +481,7 @@ module.init = function() {
     refreshTemplateSelect();
     refreshTemplatePrerequisites();
     renderExecutionQueuePreview();
+    syncTemplateUIForCurrentTown(true);
 
     document.getElementById('tpl-save-btn').onclick = saveTemplateFromUI;
     document.getElementById('tpl-delete-btn').onclick = () => {
@@ -531,7 +533,8 @@ module.isActive = function() {
 module.onActivate = function(container) {
     updateStats();
     updateQueueDisplay();
-    refreshTemplateSelect(document.getElementById('tpl-select') ? document.getElementById('tpl-select').value : undefined);
+    syncTemplateUIForCurrentTown(true);
+    refreshTemplateSelect(buildData.activeTemplates?.[String(uw.Game?.townId)] || undefined);
 };
 
 function toggleBuild(enabled) {
@@ -673,10 +676,48 @@ function humanTownDelay(){
     return buildData.settings.humanizer===false ? 700 : randomDelay(buildData.settings.humanizerTownMinDelay||2500,buildData.settings.humanizerTownMaxDelay||4500);
 }
 
-function getQueuedTownIds(){
+function getSelectedTownGroupIds(){
+    try{
+        const groups=uw.MM?.getCollections?.()?.TownGroup;
+        const townGroups=groups&&groups[0];
+        if(townGroups){
+            const activeId=townGroups.getActiveGroupId?.();
+            const models=activeId!==undefined&&activeId!==null ? townGroups.getTowns?.(activeId) : null;
+            if(models && typeof models[Symbol.iterator]==='function'){
+                const ids=[];
+                for(const model of models){
+                    const id=typeof model?.getTownId==='function'?model.getTownId():(model?.id??model?.attributes?.town_id??model?.attributes?.id);
+                    if(id!=null && uw.ITowns.getTown(id)) ids.push(String(id));
+                }
+                if(ids.length) return [...new Set(ids)];
+            }
+        }
+    }catch(e){ log('BUILD',`Impossible de lire le groupe de villes actif: ${e.message}`,'info'); }
     const towns=uw.ITowns?.getTowns?.()||{};
-    const ids=Object.values(towns).map(t=>String(t.id)).filter(tid=>buildData.queues[tid]?.length || buildData.researchQueues?.[tid]?.length);
-    return ids.sort((a,b)=>Number(a)-Number(b));
+    return Object.values(towns).map(t=>String(t.id));
+}
+
+function getQueuedTownIds(){
+    const ids=getSelectedTownGroupIds();
+    return ids.filter(tid=>buildData.queues[tid]?.length || buildData.researchQueues?.[tid]?.length || buildData.actionQueues?.[tid]?.length);
+}
+
+function syncTemplateUIForCurrentTown(force=false){
+    const tid=String(uw.Game?.townId||'');
+    if(!tid || (!force && lastTemplateUiTownId===tid)) return;
+    lastTemplateUiTownId=tid;
+    const activeName=buildData.activeTemplates?.[tid];
+    if(activeName && buildData.templates?.[activeName]){
+        loadTemplateIntoUI(buildData.templates[activeName]);
+        refreshTemplateSelect(activeName);
+        renderExecutionQueuePreview();
+    }else{
+        resetCurrentTemplateUI();
+        refreshTemplateSelect();
+        const sel=document.getElementById('tpl-select'); if(sel) sel.value='';
+        updateQueueDisplay();
+        refreshSenateQueue();
+    }
 }
 
 async function switchToTownHumanized(tid){
@@ -877,23 +918,23 @@ async function processAllQueues(){
     if(processingAllQueues || !buildData.enabled) return;
     processingAllQueues=true;
     try{
-        const towns=Object.values(uw.ITowns?.getTowns?.()||{}).map(t=>String(t.id)).sort((a,b)=>Number(a)-Number(b));
+        const townIds=getSelectedTownGroupIds();
         const active=buildData.activeTemplates||{};
-        // Pour chaque ville, reconstruire la file uniquement si elle est vide et qu'un template est actif.
-        // Cela permet de repartir automatiquement ville par ville à chaque routine.
-        for(const tid of towns){
+        for(let i=0;i<townIds.length;i++){
             if(!buildData.enabled) break;
-            const q=buildData.actionQueues?.[tid]||[];
+            const tid=townIds[i];
             const templateName=active[String(tid)];
-            if(!q.length && templateName && buildData.templates?.[templateName]){
+            const currentQueue=buildData.actionQueues?.[tid]||[];
+            if(!currentQueue.length && templateName && buildData.templates?.[templateName]){
                 buildData.actionQueues[tid]=queuePlanForTown(tid,buildData.templates[templateName]);
-                buildData.queues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='building').map(a=>({buildingId:a.buildingId,level:a.level}));
+                buildData.queues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='building').map(a=>({buildingId:a.buildingId,level:a.level,mode:a.mode||'upgrade'}));
                 buildData.researchQueues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='research').map(a=>a.rid);
                 saveData();
             }
-            if((buildData.actionQueues?.[tid]||[]).length){
-                await processTownActionQueue(tid);
-                if(buildData.enabled) await sleep(humanTownDelay());
+            const q=buildData.actionQueues?.[tid]||[];
+            if(q.length){
+                const result=await processTownActionQueue(tid);
+                if(buildData.enabled && i<townIds.length-1) await sleep(humanTownDelay());
             }
         }
     }finally{processingAllQueues=false;processingTownId=null;}
@@ -1001,6 +1042,7 @@ function removeFromQueue(idx) {
 function startSenateWatcher() {
     if (senateWatcherInterval) clearInterval(senateWatcherInterval);
     senateWatcherInterval = setInterval(() => {
+        syncTemplateUIForCurrentTown();
         injectSenateQueue();
         addBuildButtons();
     }, 1000);
@@ -1494,6 +1536,8 @@ function applyTemplateToTown(templateName){
     buildData.queues[tid]=(plan.filter(a=>a.type==='building')).map(a=>({buildingId:a.buildingId,level:a.level}));
     buildData.researchQueues[tid]=(plan.filter(a=>a.type==='research')).map(a=>a.rid);
     saveData();
+    lastTemplateUiTownId=null;
+    syncTemplateUIForCurrentTown(true);
     renderExecutionQueuePreview();
     updateStats(); updateQueueDisplay(); injectSenateQueue(); refreshSenateQueue();
     if(!plan.length){log('BUILD',`Template "${templateName}": aucune action à exécuter`,'info');return;}
