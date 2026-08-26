@@ -965,25 +965,26 @@ async function processTownActionQueue(tid){
     processingTownId=String(tid);
     if(!(await openTownControlPagesHumanized(tid))) return {blocked:true, reason:'ouverture de ville impossible'};
 
-    // Les recherches bloquées (niveau d'académie insuffisant OU autre échec de lancement)
-    // sont temporairement ignorées pendant cette routine. Elles restent à leur place dans q
-    // et seront impérativement retentées en tête de file à la prochaine routine.
-    const skippedResearch = new Set();
+    // Recherches impossibles pendant CETTE routine : elles restent strictement
+    // à leur position dans la file et seront retentées en priorité à la prochaine routine.
+    const skippedResearchIds = new Set();
 
     while(buildData.enabled && q.length){
-        // Cherche la première action encore tentable pendant cette routine.
+        // On cherche la première action qui peut encore être tentée pendant cette routine.
+        // Une recherche déjà bloquée est ignorée temporairement, mais jamais supprimée.
         let actionIndex=-1;
         for(let i=0;i<q.length;i++){
             const candidate=q[i];
-            if(candidate?.type==='research' && skippedResearch.has(candidate)) continue;
+            if(candidate?.type==='research' && skippedResearchIds.has(String(candidate.rid))) continue;
             actionIndex=i;
             break;
         }
 
-        // Il ne reste que des recherches temporairement bloquées : on passe à la ville suivante.
+        // Plus aucune action n'est exécutable pendant cette routine :
+        // on quitte immédiatement cette ville et on passe à la suivante.
         if(actionIndex<0){
             saveData(); updateQueueDisplay(); refreshSenateQueue();
-            return {blocked:true, reason:'recherches temporairement bloquées pour cette routine'};
+            return {blocked:true, reason:'aucune action exécutable pour cette routine'};
         }
 
         const action=q[actionIndex];
@@ -1001,15 +1002,18 @@ async function processTownActionQueue(tid){
                 saveData(); updateQueueDisplay(); refreshSenateQueue();
                 return {blocked:true, reason:'file de construction pleine'};
             }
+
             await sleep(humanActionDelay());
             let ok=false;
             if(action.mode==='demolish') ok=await demolishBuildingPromise(tid,action.buildingId,action.level);
             else ok=await buildUpPromise(tid,action.buildingId);
+
             if(!ok){
-                log('BUILD',`${town.getName?.()||tid}: impossible de ${action.mode==='demolish'?'démolir':'construire'} ${getBuildingName(action.buildingId)} (niveau cible ${action.level})`,'info');
+                log('BUILD',`${town.getName?.()||tid}: impossible de ${action.mode==='demolish'?'démolir':'construire'} ${getBuildingName(action.buildingId)} (niveau cible ${action.level}) → passage à la ville suivante`,'info');
                 saveData(); updateQueueDisplay(); refreshSenateQueue();
                 return {blocked:true, reason:'construction/démolition impossible (ressources ou conditions)'};
             }
+
             q.splice(actionIndex,1);
             if(buildData.queues[tid]?.length){
                 const idx=buildData.queues[tid].findIndex(x=>x.buildingId===action.buildingId && x.level===action.level);
@@ -1031,7 +1035,7 @@ async function processTownActionQueue(tid){
             const neededAcademy=getResearchAcademyLevel(action.rid);
 
             if(academy<neededAcademy){
-                skippedResearch.add(action);
+                skippedResearchIds.add(String(action.rid));
                 log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} retardée (Académie ${academy}/${neededAcademy}) → tentative des actions suivantes`,'info');
                 continue;
             }
@@ -1040,14 +1044,15 @@ async function processTownActionQueue(tid){
             if(uw.AcademyWindowFactory?.openAcademyWindow){
                 try{uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(350,750));}catch(e){}
             }
+
             const selectors=[`div[data-research_id*="${action.rid}"]`,`[data-research_id="${action.rid}"]`,`.research_icon.research.${action.rid}`,`.research_technology.${action.rid}`,`.research.${action.rid}`];
             let $candidate=null;
             for(const sel of selectors){const $el=uw.$(sel).filter(':visible');if($el&&$el.length){$candidate=$el.first();break;}}
 
-            // Quel que soit le motif de l'échec du lancement, on n'abandonne plus immédiatement
-            // la ville : la recherche est temporairement ignorée et on tente la suivante.
+            // Tout échec d'une recherche la rend temporairement bloquée pour CETTE routine.
+            // On continue obligatoirement vers l'action suivante.
             if(!$candidate||!$candidate.length){
-                skippedResearch.add(action);
+                skippedResearchIds.add(String(action.rid));
                 log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} impossible à lancer maintenant → tentative des actions suivantes`,'info');
                 continue;
             }
@@ -1056,12 +1061,13 @@ async function processTownActionQueue(tid){
             ($button.length?$button:$candidate).click();
             await sleep(buildData.settings.humanizer===false?600:randomDelay(800,1500));
             const after=getTownResearchState(tid);
+
             if(after[action.rid]===true){
                 q.splice(actionIndex,1);
                 saveData(); updateStats();
                 log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} lancée`,'success');
             }else{
-                skippedResearch.add(action);
+                skippedResearchIds.add(String(action.rid));
                 log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} non confirmée → tentative des actions suivantes`,'info');
             }
             continue;
@@ -1073,6 +1079,7 @@ async function processTownActionQueue(tid){
     saveData(); updateQueueDisplay(); refreshSenateQueue();
     return {blocked:false, reason:'termine'};
 }
+
 async function processTownQueue(tid){
     return processTownActionQueue(tid);
 }
