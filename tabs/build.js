@@ -406,19 +406,28 @@ module.render = function(container) {
 
 function renderNormalBuildingCell(bid) {
     const max=getBuildingMaxLevel(bid);
-    return `<div style="width:56px;text-align:center;">
+    return `<div style="width:76px;text-align:center;">
         <div title="${getBuildingName(bid)}" style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;margin:0 auto;">
             <div style="width:100%;height:100%;background:url(https://gpfr.innogamescdn.com/images/game/main/${bid}.png) center/cover no-repeat;"></div>
         </div>
+        <select class="tpl-mode-select" data-bid="${bid}" title="Mode pour ${getBuildingName(bid)}" style="width:72px;background:#1a1a14;border:1px solid #6b5a32;color:#D4AF37;font-size:8px;border-radius:3px;margin-top:3px;padding:1px 0;">
+            <option value="upgrade">Améliorer</option>
+            <option value="demolish">Démolir</option>
+        </select>
         <input type="number" class="tpl-level-input" data-bid="${bid}" min="0" max="${max}" value="0" title="${getBuildingName(bid)}"
-            style="width:48px;background:#1a1a14;border:1px solid #8B6914;color:#FFD700;text-align:center;font-size:11px;border-radius:3px;margin-top:4px;padding:2px 0;">
+            style="width:48px;background:#1a1a14;border:1px solid #8B6914;color:#FFD700;text-align:center;font-size:11px;border-radius:3px;margin-top:3px;padding:2px 0;">
     </div>`;
 }
 function renderSpecialCell(bid) {
-    return `<div class="tpl-special-cell" data-bid="${bid}" data-selected="0" title="${getBuildingName(bid)}" style="width:54px;text-align:center;cursor:pointer;user-select:none;">
+    return `<div class="tpl-special-cell" data-bid="${bid}" data-selected="0" title="${getBuildingName(bid)}" style="width:78px;text-align:center;cursor:pointer;user-select:none;">
         <div class="tpl-special-icon" style="width:50px;height:50px;background:#1a1a14;border:2px solid #4a4a3a;border-radius:4px;margin:0 auto;overflow:hidden;">
             <div style="width:100%;height:100%;background:url(https://gpfr.innogamescdn.com/images/game/main/${bid}.png) center/cover no-repeat;opacity:0.48;"></div>
         </div>
+        <select class="tpl-mode-select" data-bid="${bid}" title="Mode pour ${getBuildingName(bid)}" style="width:72px;background:#1a1a14;border:1px solid #6b5a32;color:#D4AF37;font-size:8px;border-radius:3px;margin-top:3px;padding:1px 0;">
+            <option value="upgrade">Améliorer</option>
+            <option value="demolish">Démolir</option>
+        </select>
+        <input type="number" class="tpl-special-level-input" data-bid="${bid}" min="0" max="1" value="0" title="Niveau cible" style="width:42px;background:#1a1a14;border:1px solid #8B6914;color:#FFD700;text-align:center;font-size:10px;border-radius:3px;margin-top:3px;padding:1px 0;">
     </div>`;
 }
 function renderResearchCell(rid) {
@@ -465,6 +474,8 @@ module.init = function() {
     initSpecialToggleHandlers();
     initResearchToggleHandlers();
     initTemplateInputHandlers();
+    initSpecialLevelInputHandlers();
+    initTemplateModeHandlers();
     refreshTemplateSelect();
     refreshTemplatePrerequisites();
     renderExecutionQueuePreview();
@@ -504,7 +515,8 @@ module.init = function() {
     
     window.GU_Build = {
         add: (bid, lvl) => addToQueue(bid, lvl),
-        remove: (idx) => removeFromQueue(idx)
+        remove: (idx) => removeFromQueue(idx),
+        removeAction: (idx) => removeActionFromQueue(idx)
     };
 
     log('BUILD', 'Module initialise', 'info');
@@ -683,6 +695,47 @@ async function switchToTownHumanized(tid){
     return false;
 }
 
+async function demolishBuildingPromise(tid,bid,targetLevel){
+    try{
+        if(!(await openTownControlPagesHumanized(tid))) return false;
+        await sleep(humanActionDelay());
+        openSenateWindowHumanized();
+        await sleep(randomDelay(buildData.settings.humanizer===false?300:800,buildData.settings.humanizer===false?600:1600));
+        // Le bouton de démolition est déclenché via l'interface native du Sénat.
+        // On essaie plusieurs sélecteurs utilisés par les versions de Grepolis.
+        const candidates=[
+            `.building.building_${bid}:visible`,
+            `.building[data-building_id="${bid}"]:visible`,
+            `.building[data-building="${bid}"]:visible`,
+            `.building:has(.name):visible`
+        ];
+        let row=null;
+        for(const sel of candidates){const $r=uw.$(sel).filter(function(){return uw.$(this).find('.name').text().toLowerCase().includes(String(getBuildingName(bid)).toLowerCase());});if($r.length){row=$r.first();break;}}
+        if(!row||!row.length){
+            const $rows=uw.$('.building:visible');
+            $rows.each(function(){if(row)return;const txt=uw.$(this).find('.name').text().trim().toLowerCase();if(txt===String(getBuildingName(bid)).toLowerCase())row=uw.$(this);});
+        }
+        if(!row||!row.length)return false;
+        const buttons=row.find('a,button,.btn,[class*="demol"],[data-action*="demol"],[title*="Démol"],[title*="Demol"]').filter(':visible');
+        let btn=null;
+        buttons.each(function(){const txt=(uw.$(this).attr('title')||uw.$(this).text()||'').toLowerCase();if(txt.includes('demol')||txt.includes('démol')){btn=uw.$(this);return false;}});
+        if(!btn||!btn.length){
+            const all=uw.$('a,button,.btn,[data-action], [title]').filter(':visible');
+            all.each(function(){const txt=(uw.$(this).attr('title')||uw.$(this).text()||'').toLowerCase();if((txt.includes('demol')||txt.includes('démol'))&&uw.$(this).closest('.building').is(row)){btn=uw.$(this);return false;}});
+        }
+        if(!btn||!btn.length)return false;
+        let beforeOrders=0;try{beforeOrders=uw.ITowns.getTown(tid)?.buildingOrders?.().length||0;}catch(e){}
+        btn.trigger('click');
+        await sleep(randomDelay(buildData.settings.humanizer===false?700:1400,buildData.settings.humanizer===false?1100:2600));
+        // Certaines versions affichent une confirmation. On la confirme seulement si elle est visible.
+        const confirm=uw.$('button,.btn,a').filter(':visible').filter(function(){const txt=(uw.$(this).text()||'').trim().toLowerCase();return ['confirmer','confirm','oui','yes'].includes(txt);}).first();
+        if(confirm.length){confirm.trigger('click');await sleep(randomDelay(500,1200));}
+        let afterOrders=0;try{afterOrders=uw.ITowns.getTown(tid)?.buildingOrders?.().length||0;}catch(e){}
+        const actual=getTownBuildingLevels(tid)[bid]||0;
+        return afterOrders>beforeOrders || actual<=Number(targetLevel);
+    }catch(e){log('BUILD',`Erreur démolition ${getBuildingName(bid)}: ${e.message}`,'error');return false;}
+}
+
 function buildUpPromise(tid,bid){
     return new Promise(resolve=>{
         let settled=false;
@@ -719,73 +772,81 @@ function ensureActionQueue(tid){
     return buildData.actionQueues[tid];
 }
 
+function computeCurrentTownProjectedLevels(tid){
+    const levels=getTownBuildingLevels(tid);
+    try{
+        const town=uw.ITowns.getTown(tid);
+        town?.buildingOrders?.().forEach(o=>{
+            const bid=(typeof o.getBuildingId==='function')?o.getBuildingId():o.attributes?.building_id;
+            if(bid)levels[bid]=(levels[bid]||0)+1;
+        });
+    }catch(e){}
+    return levels;
+}
+
 function queuePlanForTown(tid, template){
     const queue=ensureActionQueue(tid);
     queue.length=0;
-    const projected=computeProjectedLevels(tid);
+    const projected=computeCurrentTownProjectedLevels(tid);
     const visiting=new Set();
     const queuedResearch=new Set();
-    const pushBuilding=(bid,target)=>{
+    const modes=template?.__modes__||{};
+    const pushUpgrade=(bid,target)=>{
         target=Number(target)||0;
-        if(!bid||target<=0) return;
-        if(visiting.has(bid)) return;
+        if(!bid||target<=0||visiting.has(bid))return;
         visiting.add(bid);
-        getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>pushBuilding(reqBid,reqLvl));
+        getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>{
+            if((modes[reqBid]||'upgrade')==='demolish') return;
+            pushUpgrade(reqBid,reqLvl);
+        });
         while((projected[bid]||0)<target){
             const level=(projected[bid]||0)+1;
-            queue.push({type:'building',buildingId:bid,level});
+            queue.push({type:'building',mode:'upgrade',buildingId:bid,level});
             projected[bid]=level;
         }
         visiting.delete(bid);
     };
+    const pushDemolish=(bid,target)=>{
+        target=Math.max(0,Number(target)||0);
+        const current=Number(projected[bid])||0;
+        if(!bid||current<=target)return;
+        for(let level=current-1;level>=target;level--){
+            queue.push({type:'building',mode:'demolish',buildingId:bid,level});
+            projected[bid]=level;
+        }
+    };
     const pushResearch=(rid)=>{
-        if(queuedResearch.has(rid)) return;
+        if(queuedResearch.has(rid))return;
         const academyLevel=getResearchAcademyLevel(rid);
-        pushBuilding('academy',academyLevel);
+        pushUpgrade('academy',academyLevel);
         queue.push({type:'research',rid});
         queuedResearch.add(rid);
     };
     getOrderedTemplateItems(template).forEach(item=>{
-        if(item.type==='building') pushBuilding(item.buildingId,item.level);
-        else if(item.type==='research' && (getResearchData(item.rid)||RESEARCH_FALLBACK[item.rid])) pushResearch(item.rid);
+        if(item.type==='building'){
+            const mode=modes[item.buildingId]||'upgrade';
+            if(mode==='demolish') pushDemolish(item.buildingId,item.level);
+            else pushUpgrade(item.buildingId,item.level);
+        }else if(item.type==='research'&&(getResearchData(item.rid)||RESEARCH_FALLBACK[item.rid])) pushResearch(item.rid);
     });
     return queue;
 }
 
 function renderExecutionQueuePreview(){
     const list=document.getElementById('tpl-prereq-list');
-    if(!list) return;
+    if(!list)return;
     const sel=document.getElementById('tpl-select');
     let template=null;
-    if(sel?.value && buildData.templates[sel.value]) template=buildData.templates[sel.value];
+    if(sel?.value&&buildData.templates[sel.value])template=buildData.templates[sel.value];
     else template=collectTemplateFromUI();
     const tid=uw.Game.townId;
-    const preview=[];
-    const projected=computeProjectedLevels(tid);
-    const visiting=new Set(), addedResearch=new Set();
-    const pushB=(bid,target,auto=false)=>{
-        if(!bid||!target||visiting.has(bid)) return;
-        visiting.add(bid);
-        getBuildingDependencies(bid).forEach(([r,l])=>pushB(r,l,true));
-        while((projected[bid]||0)<target){
-            projected[bid]=(projected[bid]||0)+1;
-            preview.push({type:'building',buildingId:bid,level:projected[bid],auto});
-        }
-        visiting.delete(bid);
-    };
-    getOrderedTemplateItems(template).forEach(item=>{
-        if(item.type==='building') pushB(item.buildingId,item.level,false);
-        else if(!addedResearch.has(item.rid) && (getResearchData(item.rid)||RESEARCH_FALLBACK[item.rid])){
-            pushB('academy',getResearchAcademyLevel(item.rid),true);
-            preview.push({type:'research',rid:item.rid});
-            addedResearch.add(item.rid);
-        }
-    });
-    if(!preview.length){list.innerHTML='<div style="font-size:10px;color:#8B8B83;font-style:italic;">La file apparaîtra ici dans l\'ordre exact d\'exécution.</div>';return;}
-    list.innerHTML=preview.map((item,i)=>{
-        if(item.type==='research') return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#D4AF37;"><span style="width:20px;text-align:right;color:#8B8B83;">${i+1}.</span><div class="research_icon research40x40 ${item.rid}" style="width:30px;height:30px;flex-shrink:0;"></div><span>${getResearchName(item.rid)}</span><strong style="margin-left:auto;color:#FFD700;">Recherche</strong></div>`;
+    const plan=queuePlanForTown(tid,template);
+    if(!plan.length){list.innerHTML='<div style="font-size:10px;color:#8B8B83;font-style:italic;">La file apparaîtra ici dans l"ordre exact d"exécution.</div>';return;}
+    list.innerHTML=plan.map((item,i)=>{
+        if(item.type==='research')return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#D4AF37;"><span style="width:20px;text-align:right;color:#8B8B83;">${i+1}.</span><div class="research_icon research40x40 ${item.rid}" style="width:30px;height:30px;flex-shrink:0;"></div><span>${getResearchName(item.rid)}</span><strong style="margin-left:auto;color:#FFD700;">Recherche</strong></div>`;
         const iconUrl=`https://gpfr.innogamescdn.com/images/game/main/${item.buildingId}.png`;
-        return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#D4AF37;"><span style="width:20px;text-align:right;color:#8B8B83;">${i+1}.</span><div style="width:30px;height:30px;border:1px solid ${item.auto?'#66BB6A':'#8B6914'};border-radius:3px;background:#1a1a14;overflow:hidden;flex-shrink:0;"><div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div></div><span>${getBuildingName(item.buildingId)}</span><strong style="margin-left:auto;color:#FFD700;">niv. ${item.level}</strong>${item.auto?'<span style="color:#81C784;font-size:9px;">préreq.</span>':''}</div>`;
+        const demolish=item.mode==='demolish';
+        return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:${demolish?'#FF8A80':'#D4AF37'};"><span style="width:20px;text-align:right;color:#8B8B83;">${i+1}.</span><div style="width:30px;height:30px;border:1px solid ${demolish?'#B74D52':'#8B6914'};border-radius:3px;background:#1a1a14;overflow:hidden;flex-shrink:0;"><div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div></div><span>${getBuildingName(item.buildingId)}</span><strong style="margin-left:auto;color:${demolish?'#FF8A80':'#FFD700'};">${demolish?'démolir → '+item.level:'niv. '+item.level}</strong></div>`;
     }).join('');
 }
 
@@ -837,15 +898,17 @@ async function processTownActionQueue(tid){
             const max=uw.GameDataPremium?.isAdvisorActivated?.('curator')?7:2;
             if(orders.length>=max){ log('BUILD',`${town.getName?.()||tid}: file de construction pleine (${orders.length}/${max}), passage a la ville suivante`,'info'); break; }
             await sleep(humanActionDelay());
-            const ok=await buildUpPromise(tid,action.buildingId);
-            if(!ok){ log('BUILD',`${town.getName?.()||tid}: impossible de lancer ${getBuildingName(action.buildingId)} niv.${action.level} (ressources/prérequis/file), pause pour cette ville`,'info'); break; }
+            let ok=false;
+            if(action.mode==='demolish') ok=await demolishBuildingPromise(tid,action.buildingId,action.level);
+            else ok=await buildUpPromise(tid,action.buildingId);
+            if(!ok){ log('BUILD',`${town.getName?.()||tid}: impossible de ${action.mode==='demolish'?'démolir':'construire'} ${getBuildingName(action.buildingId)} (niveau cible ${action.level}), pause pour cette ville`,'info'); break; }
             q.shift();
             if(buildData.queues[tid]?.length){
                 const idx=buildData.queues[tid].findIndex(x=>x.buildingId===action.buildingId && x.level===action.level);
                 if(idx>=0) buildData.queues[tid].splice(idx,1);
             }
             buildData.stats.built++; saveData(); updateStats(); updateQueueDisplay(); refreshSenateQueue();
-            log('BUILD',`${town.getName?.()||tid}: ${getBuildingName(action.buildingId)} niv.${action.level}`,'success');
+            log('BUILD',`${town.getName?.()||tid}: ${action.mode==='demolish'?'Démolition '+getBuildingName(action.buildingId)+' → niv.'+action.level:getBuildingName(action.buildingId)+' niv.'+action.level}`,'success');
         } else if(action.type==='research'){
             const researched=getTownResearchState(tid);
             if(researched[action.rid]===true){ q.shift(); continue; }
@@ -877,7 +940,7 @@ function addToQueue(bid, lvl) {
     if (!buildData.queues[tid]) buildData.queues[tid] = [];
     if (!buildData.actionQueues) buildData.actionQueues = {};
     if (!buildData.actionQueues[tid]) buildData.actionQueues[tid] = [];
-    const action = { type:'building', buildingId: bid, level: lvl };
+    const action = { type:'building', mode:'upgrade', buildingId: bid, level: lvl };
     buildData.queues[tid].push({ buildingId: bid, level: lvl });
     buildData.actionQueues[tid].push(action);
     saveData();
@@ -887,6 +950,23 @@ function addToQueue(bid, lvl) {
     updateQueueDisplay();
     uw.$('.ab-btn').remove();
     if (buildData.enabled) processTownActionQueue(tid);
+}
+
+function removeActionFromQueue(idx){
+    const tid=uw.Game.townId;
+    const q=buildData.actionQueues?.[tid]||[];
+    if(idx<0||idx>=q.length)return;
+    const removed=q.splice(idx,1)[0];
+    if(removed?.type==='building' && buildData.queues?.[tid]){
+        const bi=buildData.queues[tid].findIndex(x=>x.buildingId===removed.buildingId&&x.level===removed.level);
+        if(bi>=0)buildData.queues[tid].splice(bi,1);
+    }
+    if(removed?.type==='research' && buildData.researchQueues?.[tid]){
+        const ri=buildData.researchQueues[tid].indexOf(removed.rid);
+        if(ri>=0)buildData.researchQueues[tid].splice(ri,1);
+    }
+    saveData(); updateStats(); updateQueueDisplay(); refreshSenateQueue();
+    log('BUILD',`Action supprimée de la file: ${removed?.type==='research'?getResearchName(removed.rid):getBuildingName(removed.buildingId)}`,'info');
 }
 
 function removeFromQueue(idx) {
@@ -952,7 +1032,7 @@ function refreshSenateQueue() {
                 if(it.type==='research'){
                     return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #6A8FB5;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getResearchName(it.rid)}">
                         <div class="research_icon research40x40 ${it.rid}" style="width:38px;height:38px;margin:5px auto 0;"></div>
-                        <span style="position:absolute;bottom:2px;right:2px;background:#315D86;color:#fff;font-weight:bold;font-size:9px;padding:1px 4px;border-radius:3px;">R</span>
+                        <span style="position:absolute;bottom:2px;right:2px;background:#315D86;color:#fff;font-weight:bold;font-size:9px;padding:1px 4px;border-radius:3px;">R</span><span onclick="event.stopPropagation();GU_Build.removeAction(${i})" title="Supprimer" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;">×</span>
                     </div>`;
                 }
                 const iconUrl = `https://gpfr.innogamescdn.com/images/game/main/${it.buildingId}.png`;
@@ -1022,7 +1102,7 @@ function updateQueueDisplay() {
         container.innerHTML = queue.map((it, i) => {
             if(it.type==='research') return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #6A8FB5;border-radius:4px;position:relative;cursor:pointer;" title="${getResearchName(it.rid)}"><div class="research_icon research40x40 ${it.rid}" style="width:38px;height:38px;margin:5px auto 0;"></div><span style="position:absolute;bottom:2px;right:2px;background:#315D86;color:#fff;font-weight:bold;font-size:9px;padding:1px 4px;border-radius:3px;">R</span></div>`;
             const iconUrl = `https://gpfr.innogamescdn.com/images/game/main/${it.buildingId}.png`;
-            return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;cursor:pointer;" title="${getBuildingName(it.buildingId)} niv.${it.level}"><div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div><span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span></div>`;
+            return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;cursor:pointer;" title="${getBuildingName(it.buildingId)} niv.${it.level}"><div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div><span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span><span onclick="event.stopPropagation();GU_Build.removeAction(${i})" title="Supprimer" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;">×</span></div>`;
         }).join('');
     }
 }
@@ -1048,10 +1128,14 @@ function initSpecialToggleHandlers() {
                 cell.dataset.selected='1';
                 cell.querySelector('.tpl-special-icon').style.borderColor='#FFD700';
                 cell.querySelector('.tpl-special-icon div').style.opacity='1';
+                const levelInput=cell.querySelector('.tpl-special-level-input');
+                if(levelInput && !(parseInt(levelInput.value)||0)) levelInput.value='1';
                 recordTemplateOrder(bid);
                 applyPrerequisitesToTemplateUI();
             } else {
                 templateEditOrder=templateEditOrder.filter(k=>k!==bid);
+                const levelInput=cell.querySelector('.tpl-special-level-input');
+                if(levelInput) levelInput.value='0';
                 refreshTemplatePrerequisites(true);
             }
             renderExecutionQueuePreview();
@@ -1110,17 +1194,62 @@ function applyPrerequisitesToTemplateUI(){
     refreshTemplatePrerequisites(false);
 }
 
+function initSpecialLevelInputHandlers(){
+    document.querySelectorAll('.tpl-special-level-input').forEach(inp=>{
+        inp.addEventListener('click',e=>e.stopPropagation());
+        const handler=()=>{
+            const bid=inp.dataset.bid;
+            const cell=document.querySelector(`.tpl-special-cell[data-bid="${bid}"]`);
+            const lvl=Math.max(0,Math.min(1,parseInt(inp.value)||0));
+            inp.value=String(lvl);
+            if(cell?.dataset.selected==='1'){
+                if(lvl>0)recordTemplateOrder(bid);
+                else templateEditOrder=templateEditOrder.filter(k=>k!==bid);
+            }
+            renderExecutionQueuePreview();
+        };
+        inp.addEventListener('input',handler);
+        inp.addEventListener('change',handler);
+    });
+}
+
+function getTemplateBuildingMode(bid){
+    const el=document.querySelector(`.tpl-mode-select[data-bid="${bid}"]`);
+    return el?.value==='demolish' ? 'demolish' : 'upgrade';
+}
+
+function initTemplateModeHandlers(){
+    document.querySelectorAll('.tpl-mode-select').forEach(sel=>{
+        sel.addEventListener('click',e=>e.stopPropagation());
+        sel.addEventListener('change',()=>{
+            const bid=sel.dataset.bid;
+            const mode=sel.value==='demolish'?'demolish':'upgrade';
+            const inp=document.querySelector(`.tpl-level-input[data-bid="${bid}"]`);
+            if(inp){
+                inp.title = mode==='demolish' ? `${getBuildingName(bid)} — niveau cible après démolition` : getBuildingName(bid);
+                inp.style.color = mode==='demolish' ? '#FF8A80' : '#FFD700';
+            }
+            const specialInp=document.querySelector(`.tpl-special-level-input[data-bid="${bid}"]`);
+            if(specialInp){
+                if(mode==='demolish' && (parseInt(specialInp.value)||0)>0) specialInp.value='0';
+                else if(mode==='upgrade' && (parseInt(specialInp.value)||0)<=0) specialInp.value='1';
+            }
+            renderExecutionQueuePreview();
+        });
+    });
+}
+
 function getTemplateSelections(){
-    const buildings={};
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{const bid=inp.dataset.bid;const lvl=parseInt(inp.value)||0;if(lvl>0)buildings[bid]=Math.min(lvl,getBuildingMaxLevel(bid));});
-    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{if(cell.dataset.selected==='1')buildings[cell.dataset.bid]=1;});
+    const buildings={},modes={};
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{const bid=inp.dataset.bid;const lvl=parseInt(inp.value)||0;if(lvl>0)buildings[bid]=Math.min(lvl,getBuildingMaxLevel(bid));modes[bid]=getTemplateBuildingMode(bid);});
+    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{if(cell.dataset.selected==='1'){const inp=cell.querySelector('.tpl-special-level-input');const lvl=Math.min(1,Math.max(0,parseInt(inp?.value)||1));if(lvl>0)buildings[cell.dataset.bid]=lvl;modes[cell.dataset.bid]=getTemplateBuildingMode(cell.dataset.bid);}});
     const researches={};
     document.querySelectorAll('.tpl-research-cell').forEach(cell=>{if(cell.dataset.selected==='1')researches[cell.dataset.rid]=true;});
-    return {buildings,researches};
+    return {buildings,researches,modes};
 }
 
 function calculateTemplateRequirements(){
-    const {buildings,researches}=getTemplateSelections();
+    const {buildings,researches,modes}=getTemplateSelections();
     // La table ci-dessus est également utilisée pour l'application réelle du template.
     // On calcule donc exactement le même graphe de dépendances pour l'aperçu et la file.
 
@@ -1139,7 +1268,7 @@ function calculateTemplateRequirements(){
         required[bid]=Math.max(previous,target);
         visiting.delete(bid);
     }
-    Object.entries(buildings).forEach(([bid,lvl])=>ensureBuildingRequirement(bid,lvl));
+    Object.entries(buildings).forEach(([bid,lvl])=>{ if((modes[bid]||'upgrade')!=='demolish') ensureBuildingRequirement(bid,lvl); });
     Object.keys(researches).forEach(rid=>ensureBuildingRequirement('academy',getResearchAcademyLevel(rid)));
     return {buildings:required,researches};
 }
@@ -1181,18 +1310,21 @@ function refreshTemplatePrerequisites(autoSync=false){
 function collectTemplateFromUI(){
     const template={};
     document.querySelectorAll('.tpl-level-input').forEach(inp=>{const bid=inp.dataset.bid,lvl=parseInt(inp.value)||0;if(lvl>0)template[bid]=Math.min(lvl,getBuildingMaxLevel(bid));});
-    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{if(cell.dataset.selected==='1')template[cell.dataset.bid]=1;});
+    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{if(cell.dataset.selected==='1'){const inp=cell.querySelector('.tpl-special-level-input');const lvl=Math.min(1,Math.max(0,parseInt(inp?.value)||1));if(lvl>0)template[cell.dataset.bid]=lvl;}});
     document.querySelectorAll('.tpl-research-cell').forEach(cell=>{if(cell.dataset.selected==='1')template[RESEARCH_KEY_PREFIX+cell.dataset.rid]=1;});
+    const modes={};
+    Object.keys(template).forEach(k=>{if(k!=='__order__')modes[k]=getTemplateBuildingMode(k);});
     const order=templateEditOrder.filter(k=>Object.prototype.hasOwnProperty.call(template,k));
-    Object.keys(template).forEach(k=>{if(!order.includes(k))order.push(k);});
+    Object.keys(template).forEach(k=>{if(k!=='__order__' && !order.includes(k))order.push(k);});
     template.__order__=order;
+    template.__modes__=modes;
     return template;
 }
 
 function loadTemplateIntoUI(template){
     templateEditOrder=Array.isArray(template?.__order__) ? [...template.__order__] : [];
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>inp.value=template[inp.dataset.bid]||0);
-    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{const bid=cell.dataset.bid,selected=!!template[bid];cell.dataset.selected=selected?'1':'0';cell.querySelector('.tpl-special-icon').style.borderColor=selected?'#FFD700':'#4a4a3a';cell.querySelector('.tpl-special-icon div').style.opacity=selected?'1':'0.5';});
+    document.querySelectorAll('.tpl-level-input').forEach(inp=>{const bid=inp.dataset.bid;inp.value=template[inp.dataset.bid]||0;const mode=template?.__modes__?.[bid]||'upgrade';const sel=document.querySelector(`.tpl-mode-select[data-bid="${bid}"]`);if(sel)sel.value=mode;inp.style.color=mode==='demolish'?'#FF8A80':'#FFD700';});
+    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{const bid=cell.dataset.bid,selected=!!template[bid];cell.dataset.selected=selected?'1':'0';cell.querySelector('.tpl-special-icon').style.borderColor=selected?'#FFD700':'#4a4a3a';cell.querySelector('.tpl-special-icon div').style.opacity=selected?'1':'0.5';const inp=cell.querySelector('.tpl-special-level-input');if(inp)inp.value=selected?(template[bid]||1):0;const mode=template?.__modes__?.[bid]||'upgrade';const sel=cell.querySelector('.tpl-mode-select');if(sel)sel.value=mode;});
     document.querySelectorAll('.tpl-research-cell').forEach(cell=>{const key=RESEARCH_KEY_PREFIX+cell.dataset.rid,selected=!!template[key]||!!template[cell.dataset.rid];cell.dataset.selected=selected?'1':'0';cell.style.opacity=selected?'1':'0.48';cell.style.borderColor=selected?'#FFD700':'#4a4a3a';});
     refreshTemplatePrerequisites(true);
     renderExecutionQueuePreview();
@@ -1200,6 +1332,7 @@ function loadTemplateIntoUI(template){
 
 function resetCurrentTemplateUI(){
     templateEditOrder=[];
+    document.querySelectorAll('.tpl-mode-select').forEach(sel=>sel.value='upgrade');
     document.querySelectorAll('.tpl-level-input').forEach(inp=>{
         inp.value=0;
         inp.style.borderColor='#8B6914';
@@ -1210,6 +1343,7 @@ function resetCurrentTemplateUI(){
         cell.dataset.selected='0';
         cell.querySelector('.tpl-special-icon').style.borderColor='#4a4a3a';
         cell.querySelector('.tpl-special-icon div').style.opacity='0.5';
+        const inp=cell.querySelector('.tpl-special-level-input');if(inp)inp.value='0';
     });
 
     document.querySelectorAll('.tpl-research-cell').forEach(cell=>{
