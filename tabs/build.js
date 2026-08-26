@@ -219,6 +219,7 @@ let buildData = {
 let senateWatcherInterval = null;
 let gratisInterval = null;
 let fillInterval = null;
+let templateEditOrder = [];
 
 module.render = function(container) {
     container.innerHTML = `
@@ -448,7 +449,7 @@ module.init = function() {
         log('BUILD', 'Intervalle: ' + e.target.value + ' min', 'info');
         if (buildData.enabled) {
             buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
-            processAllResearchQueues();
+            processAllQueues();
         }
     };
 
@@ -536,7 +537,7 @@ function toggleBuild(enabled) {
         // jusqu'a ce qu'il n'y ait plus rien a construire ou plus assez de ressources.
         if (fillInterval) clearInterval(fillInterval);
         fillInterval = setInterval(() => {
-            if (buildData.enabled) { processAllQueues(); processAllResearchQueues(); }
+            if (buildData.enabled) { processAllQueues(); }
         }, 20000);
     } else {
         ctrl.classList.add('inactive');
@@ -696,12 +697,19 @@ function buildUpPromise(tid,bid){
 
 function getOrderedTemplateItems(template){
     const items=[];
-    Object.keys(template||{}).forEach(key=>{
-        const value=Number(template[key])||0;
+    const order=Array.isArray(template?.__order__) ? template.__order__ : [];
+    const seen=new Set();
+    const pushKey=(key)=>{
+        key=String(key);
+        if(key==='__order__'||seen.has(key)) return;
+        seen.add(key);
+        const value=Number(template?.[key])||0;
         if(value<=0) return;
         if(key.startsWith(RESEARCH_KEY_PREFIX)) items.push({type:'research',rid:key.slice(RESEARCH_KEY_PREFIX.length)});
         else items.push({type:'building',buildingId:key,level:value});
-    });
+    };
+    order.forEach(pushKey);
+    Object.keys(template||{}).forEach(pushKey);
     return items;
 }
 
@@ -1023,6 +1031,12 @@ function updateQueueDisplay() {
 // TEMPLATES DE CONSTRUCTION
 // ============================================================================
 
+function recordTemplateOrder(key){
+    key=String(key);
+    templateEditOrder=templateEditOrder.filter(k=>k!==key);
+    templateEditOrder.push(key);
+}
+
 function initSpecialToggleHandlers() {
     document.querySelectorAll('.tpl-special-cell').forEach(cell => {
         cell.onclick=()=>{
@@ -1034,26 +1048,45 @@ function initSpecialToggleHandlers() {
                 cell.dataset.selected='1';
                 cell.querySelector('.tpl-special-icon').style.borderColor='#FFD700';
                 cell.querySelector('.tpl-special-icon div').style.opacity='1';
-                // Dès la sélection d'un bâtiment spécial, ses prérequis sont
-                // immédiatement propagés dans les champs du Builder.
+                recordTemplateOrder(bid);
                 applyPrerequisitesToTemplateUI();
             } else {
+                templateEditOrder=templateEditOrder.filter(k=>k!==bid);
                 refreshTemplatePrerequisites(true);
             }
+            renderExecutionQueuePreview();
         };
     });
 }
 
 function initResearchToggleHandlers(){
     document.querySelectorAll('.tpl-research-cell').forEach(cell=>{
-        cell.onclick=()=>{const selected=cell.dataset.selected==='1';cell.dataset.selected=selected?'0':'1';cell.style.opacity=selected?'0.48':'1';cell.style.borderColor=selected?'#4a4a3a':'#FFD700';refreshTemplatePrerequisites(true);};
+        cell.onclick=()=>{
+            const rid=cell.dataset.rid, key=RESEARCH_KEY_PREFIX+rid;
+            const selected=cell.dataset.selected==='1';
+            cell.dataset.selected=selected?'0':'1';
+            cell.style.opacity=selected?'0.48':'1';
+            cell.style.borderColor=selected?'#4a4a3a':'#FFD700';
+            if(!selected) recordTemplateOrder(key);
+            else templateEditOrder=templateEditOrder.filter(k=>k!==key);
+            refreshTemplatePrerequisites(true);
+            renderExecutionQueuePreview();
+        };
     });
 }
 
 function initTemplateInputHandlers(){
     document.querySelectorAll('.tpl-level-input').forEach(inp=>{
-        inp.addEventListener('input',()=>refreshTemplatePrerequisites(true));
-        inp.addEventListener('change',()=>refreshTemplatePrerequisites(true));
+        const handler=()=>{
+            const bid=inp.dataset.bid;
+            const lvl=parseInt(inp.value)||0;
+            if(lvl>0) recordTemplateOrder(bid);
+            else templateEditOrder=templateEditOrder.filter(k=>k!==bid);
+            refreshTemplatePrerequisites(true);
+            renderExecutionQueuePreview();
+        };
+        inp.addEventListener('input',handler);
+        inp.addEventListener('change',handler);
     });
 }
 
@@ -1150,10 +1183,14 @@ function collectTemplateFromUI(){
     document.querySelectorAll('.tpl-level-input').forEach(inp=>{const bid=inp.dataset.bid,lvl=parseInt(inp.value)||0;if(lvl>0)template[bid]=Math.min(lvl,getBuildingMaxLevel(bid));});
     document.querySelectorAll('.tpl-special-cell').forEach(cell=>{if(cell.dataset.selected==='1')template[cell.dataset.bid]=1;});
     document.querySelectorAll('.tpl-research-cell').forEach(cell=>{if(cell.dataset.selected==='1')template[RESEARCH_KEY_PREFIX+cell.dataset.rid]=1;});
+    const order=templateEditOrder.filter(k=>Object.prototype.hasOwnProperty.call(template,k));
+    Object.keys(template).forEach(k=>{if(!order.includes(k))order.push(k);});
+    template.__order__=order;
     return template;
 }
 
 function loadTemplateIntoUI(template){
+    templateEditOrder=Array.isArray(template?.__order__) ? [...template.__order__] : [];
     document.querySelectorAll('.tpl-level-input').forEach(inp=>inp.value=template[inp.dataset.bid]||0);
     document.querySelectorAll('.tpl-special-cell').forEach(cell=>{const bid=cell.dataset.bid,selected=!!template[bid];cell.dataset.selected=selected?'1':'0';cell.querySelector('.tpl-special-icon').style.borderColor=selected?'#FFD700':'#4a4a3a';cell.querySelector('.tpl-special-icon div').style.opacity=selected?'1':'0.5';});
     document.querySelectorAll('.tpl-research-cell').forEach(cell=>{const key=RESEARCH_KEY_PREFIX+cell.dataset.rid,selected=!!template[key]||!!template[cell.dataset.rid];cell.dataset.selected=selected?'1':'0';cell.style.opacity=selected?'1':'0.48';cell.style.borderColor=selected?'#FFD700':'#4a4a3a';});
@@ -1162,6 +1199,7 @@ function loadTemplateIntoUI(template){
 }
 
 function resetCurrentTemplateUI(){
+    templateEditOrder=[];
     document.querySelectorAll('.tpl-level-input').forEach(inp=>{
         inp.value=0;
         inp.style.borderColor='#8B6914';
@@ -1196,7 +1234,7 @@ function saveTemplateFromUI() {
     if (!name) { log('BUILD', 'Entrez un nom pour le template', 'error'); return; }
 
     const template = collectTemplateFromUI();
-    if (Object.keys(template).length === 0) { log('BUILD', 'Le template est vide', 'error'); return; }
+    if (Object.keys(template).filter(k=>k!=='__order__').length === 0) { log('BUILD', 'Le template est vide', 'error'); return; }
 
     buildData.templates[name] = template;
     saveData();
@@ -1319,7 +1357,6 @@ function startTimer() {
         if (diff <= 0) {
             processAllQueues();
             buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
-            processAllResearchQueues();
         }
         
         const m = Math.max(0, Math.floor(diff / 60000)).toString().padStart(2, '0');
