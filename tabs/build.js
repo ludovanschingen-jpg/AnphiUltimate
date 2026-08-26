@@ -975,7 +975,13 @@ async function processAllQueues(){
                 saveData();
             }
             if((buildData.actionQueues?.[tid]||[]).length){
-                const result=await processTownActionQueue(tid);
+                let result;
+                try{
+                    result=await processTownActionQueue(tid);
+                }catch(e){
+                    log('BUILD', `${uw.ITowns.getTown(tid)?.getName?.()||tid}: erreur inattendue (${e.message}) → passage à la ville suivante`, 'error');
+                    result={blocked:true, reason:'exception: '+e.message};
+                }
                 if(result?.blocked){
                     routineBlockedTowns.add(String(tid));
                     log('BUILD',`${uw.ITowns.getTown(tid)?.getName?.()||tid}: passage a la ville suivante (${result.reason})`,'info');
@@ -984,6 +990,19 @@ async function processAllQueues(){
             }
         }
     }finally{processingAllQueues=false;processingTownId=null;}
+}
+
+function hasPendingBuildingOrder(tid, bid) {
+    try {
+        const town = uw.ITowns.getTown(tid);
+        const orders = town?.buildingOrders?.() || [];
+        return orders.some(o => {
+            const id = (typeof o.getBuildingId === 'function') ? o.getBuildingId() : o.attributes?.building_id;
+            return String(id) === String(bid);
+        });
+    } catch (e) {
+        return false;
+    }
 }
 
 async function processTownActionQueue(tid){
@@ -1063,9 +1082,15 @@ async function processTownActionQueue(tid){
             const neededAcademy=getResearchAcademyLevel(action.rid);
 
             if(academy<neededAcademy){
-                skippedResearchIds.add(String(action.rid));
-                log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} retardée (Académie ${academy}/${neededAcademy}) → tentative des actions suivantes`,'info');
-                continue;
+                if(hasPendingBuildingOrder(tid,'academy')){
+                    skippedResearchIds.add(String(action.rid));
+                    log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} en attente (Académie ${academy}/${neededAcademy} — construction en cours) → tentative des actions suivantes`,'info');
+                    continue;
+                }
+
+                log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} impossible (Académie ${academy}/${neededAcademy}, aucune construction en cours) → passage à la ville suivante`,'info');
+                saveData(); updateQueueDisplay(); refreshSenateQueue();
+                return {blocked:true, reason:'recherche bloquée: Académie insuffisante et aucune construction en cours'};
             }
 
             await sleep(humanActionDelay());
