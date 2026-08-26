@@ -549,21 +549,14 @@ function toggleBuild(enabled) {
         buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
         processAllQueues();
 
-        // Remplissage continu : tant que le bot est actif, on retente regulierement de
-        // remplir la file de construction (nouveaux emplacements libres, ressources reconstituees...)
-        // jusqu'a ce qu'il n'y ait plus rien a construire ou plus assez de ressources.
-        if (fillInterval) clearInterval(fillInterval);
-        fillInterval = setInterval(() => {
-            if (buildData.enabled) { processAllQueues(); }
-        }, 20000);
+        // Une routine parcourt les villes une seule fois.
+        // Les villes bloquees attendent la prochaine routine du timer.
+        if (fillInterval) { clearInterval(fillInterval); fillInterval = null; }
     } else {
         ctrl.classList.add('inactive');
         status.textContent = 'En attente';
         log('BUILD', 'Bot arrete', 'info');
-        if (fillInterval) {
-            clearInterval(fillInterval);
-            fillInterval = null;
-        }
+        if (fillInterval) { clearInterval(fillInterval); fillInterval = null; }
     }
     
     saveData();
@@ -663,6 +656,7 @@ function callGratis(townId, orderId) {
 
 let processingAllQueues = false;
 let processingTownId = null;
+let routineBlockedTowns = new Set();
 
 function randomDelay(minMs,maxMs){
     const a=Math.max(0,Number(minMs)||0), b=Math.max(a,Number(maxMs)||a);
@@ -917,47 +911,51 @@ async function openTownControlPagesHumanized(tid){
 async function processAllQueues(){
     if(processingAllQueues || !buildData.enabled) return;
     processingAllQueues=true;
+    routineBlockedTowns=new Set();
     try{
-        const townIds=getSelectedTownGroupIds();
+        const towns=Object.values(uw.ITowns?.getTowns?.()||{}).map(t=>String(t.id)).sort((a,b)=>Number(a)-Number(b));
         const active=buildData.activeTemplates||{};
-        for(let i=0;i<townIds.length;i++){
+        for(const tid of towns){
             if(!buildData.enabled) break;
-            const tid=townIds[i];
+            if(routineBlockedTowns.has(String(tid))) continue;
+            const q=buildData.actionQueues?.[tid]||[];
             const templateName=active[String(tid)];
-            const currentQueue=buildData.actionQueues?.[tid]||[];
-            if(!currentQueue.length && templateName && buildData.templates?.[templateName]){
+            if(!q.length && templateName && buildData.templates?.[templateName]){
                 buildData.actionQueues[tid]=queuePlanForTown(tid,buildData.templates[templateName]);
-                buildData.queues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='building').map(a=>({buildingId:a.buildingId,level:a.level,mode:a.mode||'upgrade'}));
+                buildData.queues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='building').map(a=>({buildingId:a.buildingId,level:a.level}));
                 buildData.researchQueues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='research').map(a=>a.rid);
                 saveData();
             }
-            const q=buildData.actionQueues?.[tid]||[];
-            if(q.length){
+            if((buildData.actionQueues?.[tid]||[]).length){
                 const result=await processTownActionQueue(tid);
-                if(buildData.enabled && i<townIds.length-1) await sleep(humanTownDelay());
+                if(result?.blocked){
+                    routineBlockedTowns.add(String(tid));
+                    log('BUILD',`${uw.ITowns.getTown(tid)?.getName?.()||tid}: passage a la ville suivante (${result.reason})`,'info');
+                }
+                if(buildData.enabled) await sleep(humanTownDelay());
             }
         }
     }finally{processingAllQueues=false;processingTownId=null;}
 }
 
 async function processTownActionQueue(tid){
-    if(!buildData.enabled) return;
+    if(!buildData.enabled) return {blocked:false, reason:'disabled'};
     const q=buildData.actionQueues?.[tid]||[];
-    if(!q.length) return;
+    if(!q.length) return {blocked:false, reason:'empty'};
     processingTownId=String(tid);
-    if(!(await openTownControlPagesHumanized(tid))) return;
+    if(!(await openTownControlPagesHumanized(tid))) return {blocked:true, reason:'ouverture de ville impossible'};
     while(buildData.enabled && q.length){
         const town=uw.ITowns.getTown(tid); if(!town) break;
         const action=q[0];
         if(action.type==='building'){
             let orders=[]; try{orders=town.buildingOrders?.()||[];}catch(e){}
             const max=uw.GameDataPremium?.isAdvisorActivated?.('curator')?7:2;
-            if(orders.length>=max){ log('BUILD',`${town.getName?.()||tid}: file de construction pleine (${orders.length}/${max}), passage a la ville suivante`,'info'); break; }
+            if(orders.length>=max){ log('BUILD',`${town.getName?.()||tid}: file de construction pleine (${orders.length}/${max})`,'info'); saveData(); updateQueueDisplay(); refreshSenateQueue(); return {blocked:true, reason:'file de construction pleine'}; }
             await sleep(humanActionDelay());
             let ok=false;
             if(action.mode==='demolish') ok=await demolishBuildingPromise(tid,action.buildingId,action.level);
             else ok=await buildUpPromise(tid,action.buildingId);
-            if(!ok){ log('BUILD',`${town.getName?.()||tid}: impossible de ${action.mode==='demolish'?'démolir':'construire'} ${getBuildingName(action.buildingId)} (niveau cible ${action.level}), pause pour cette ville`,'info'); break; }
+            if(!ok){ log('BUILD',`${town.getName?.()||tid}: impossible de ${action.mode==='demolish'?'démolir':'construire'} ${getBuildingName(action.buildingId)} (niveau cible ${action.level})`,'info'); saveData(); updateQueueDisplay(); refreshSenateQueue(); return {blocked:true, reason:'construction/démolition impossible (ressources ou conditions)'}; }
             q.shift();
             if(buildData.queues[tid]?.length){
                 const idx=buildData.queues[tid].findIndex(x=>x.buildingId===action.buildingId && x.level===action.level);
@@ -969,22 +967,23 @@ async function processTownActionQueue(tid){
             const researched=getTownResearchState(tid);
             if(researched[action.rid]===true){ q.shift(); continue; }
             const academy=(town.getBuildings&&town.getBuildings().getBuildings())?.academy||0;
-            if(academy<getResearchAcademyLevel(action.rid)){ log('BUILD',`${town.getName?.()||tid}: Académie insuffisante pour ${getResearchName(action.rid)}`,'info'); break; }
+            if(academy<getResearchAcademyLevel(action.rid)){ log('BUILD',`${town.getName?.()||tid}: Académie insuffisante pour ${getResearchName(action.rid)}`,'info'); saveData(); return {blocked:true, reason:'recherche impossible (Académie insuffisante)'}; }
             await sleep(humanActionDelay());
             if(uw.AcademyWindowFactory?.openAcademyWindow){ try{uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(500,1000));}catch(e){} }
             const selectors=[`div[data-research_id*="${action.rid}"]`,`[data-research_id="${action.rid}"]`,`.research_icon.research.${action.rid}`,`.research_technology.${action.rid}`,`.research.${action.rid}`];
             let $candidate=null;
             for(const sel of selectors){const $el=uw.$(sel).filter(':visible');if($el&&$el.length){$candidate=$el.first();break;}}
-            if(!$candidate||!$candidate.length){ log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} introuvable dans l\'Académie`,'info'); break; }
+            if(!$candidate||!$candidate.length){ log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} introuvable dans l\'Académie`,'info'); saveData(); return {blocked:true, reason:'recherche impossible à lancer'}; }
             const $button=$candidate.closest('button,.btn,.research_technology,.research').first();
             ($button.length?$button:$candidate).click();
             await sleep(buildData.settings.humanizer===false?700:randomDelay(900,1800));
             const after=getTownResearchState(tid);
             if(after[action.rid]===true){ q.shift(); saveData(); updateStats(); log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} lancée`,'success'); }
-            else break;
+            else { saveData(); updateQueueDisplay(); return {blocked:true, reason:'recherche impossible à lancer (clic non confirmé)'}; }
         } else q.shift();
     }
     saveData(); updateQueueDisplay(); refreshSenateQueue();
+    return {blocked:false, reason:'termine'};
 }
 
 async function processTownQueue(tid){
