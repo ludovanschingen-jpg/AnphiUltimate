@@ -679,6 +679,22 @@ function humanTownDelay(){
     return buildData.settings.humanizer===false ? 700 : randomDelay(buildData.settings.humanizerTownMinDelay||2500,buildData.settings.humanizerTownMaxDelay||4500);
 }
 
+// Liste déterministe de TOUTES les villes possédées, triée par ID de ville
+// croissant. On ne dépend plus d'un "groupe de villes actif" côté jeu (filtre
+// qui peut être vide, mal défini, ou changer d'ordre d'une routine à l'autre) :
+// la ville "numéro 1" est toujours la même, peu importe son nom, et l'ordre
+// est stable d'une routine à l'autre.
+function getAllOwnedTownIds(){
+    const towns=uw.ITowns?.getTowns?.()||{};
+    return Object.values(towns)
+        .map(t=>String(t.id))
+        .filter(id=>id && id!=='undefined' && id!=='null')
+        .sort((a,b)=>Number(a)-Number(b));
+}
+
+// Conservée pour compatibilité : utilisée uniquement si un groupe de villes
+// actif existe réellement côté jeu. La routine principale (processAllQueues)
+// n'en dépend plus — voir getAllOwnedTownIds().
 function getSelectedTownGroupIds(){
     try{
         const groups=uw.MM?.getCollections?.()?.TownGroup;
@@ -696,12 +712,11 @@ function getSelectedTownGroupIds(){
             }
         }
     }catch(e){ log('BUILD',`Impossible de lire le groupe de villes actif: ${e.message}`,'info'); }
-    const towns=uw.ITowns?.getTowns?.()||{};
-    return Object.values(towns).map(t=>String(t.id));
+    return getAllOwnedTownIds();
 }
 
 function getQueuedTownIds(){
-    const ids=getSelectedTownGroupIds();
+    const ids=getAllOwnedTownIds();
     return ids.filter(tid=>buildData.queues[tid]?.length || buildData.researchQueues?.[tid]?.length || buildData.actionQueues?.[tid]?.length);
 }
 
@@ -953,14 +968,31 @@ function openSenateWindowHumanized(){
     return false;
 }
 
+// Ouvre systématiquement le Sénat (fenêtre gauche) puis l'Académie (fenêtre
+// droite) pour la ville donnée, avant tout traitement de la file. C'est une
+// étape obligatoire de chaque prise en charge de ville : le template n'est
+// appliqué/tenté qu'une fois ces deux fenêtres ouvertes.
 async function openTownControlPagesHumanized(tid){
     if(!(await switchToTownHumanized(tid))) return false;
+    const townLabel=uw.ITowns.getTown(tid)?.getName?.()||tid;
+
     await sleep(humanActionDelay());
-    openSenateWindowHumanized();
+    const senateOpened=openSenateWindowHumanized();
+    log('BUILD',`${townLabel}: ${senateOpened?'Senat ouvert':'ouverture du Senat impossible'}`,'info');
     await sleep(randomDelay(buildData.settings.humanizer===false?200:300,buildData.settings.humanizer===false?450:650));
+
+    let academyOpened=false;
     if(uw.AcademyWindowFactory?.openAcademyWindow){
-        try{ uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(buildData.settings.humanizer===false?200:300,buildData.settings.humanizer===false?450:650)); }catch(e){}
+        try{
+            uw.AcademyWindowFactory.openAcademyWindow();
+            academyOpened=true;
+            await sleep(randomDelay(buildData.settings.humanizer===false?200:300,buildData.settings.humanizer===false?450:650));
+        }catch(e){
+            log('BUILD',`${townLabel}: erreur ouverture Academie: ${e.message}`,'info');
+        }
     }
+    log('BUILD',`${townLabel}: ${academyOpened?'Academie ouverte':'ouverture de l\'Academie impossible'}`,'info');
+
     return true;
 }
 
@@ -981,45 +1013,71 @@ function hasPendingBuildingOrder(tid, bid) {
     }
 }
 
+// Routine principale : parcourt TOUTES les villes possédées, toujours dans le
+// même ordre déterministe (ville n°1 = premier ID trié, peu importe son nom),
+// et traite chacune jusqu'à un blocage réel (plus de ressources, plus de place
+// dans la file, ou recherche impossible sans construction en cours) avant de
+// passer à la suivante.
 async function processAllQueues(){
     if(processingAllQueues || !buildData.enabled) return;
     processingAllQueues=true;
     routineBlockedTowns=new Set();
     try{
-        const towns=getSelectedTownGroupIds().map(String);
+        const towns=getAllOwnedTownIds();
         const active=buildData.activeTemplates||{};
+        log('BUILD',`Nouvelle routine : ${towns.length} ville(s) a traiter dans l'ordre`,'info');
+
         for(const tid of towns){
             if(!buildData.enabled) break;
             if(routineBlockedTowns.has(String(tid))) continue;
-            const q=buildData.actionQueues?.[tid]||[];
+
+            const townLabel=uw.ITowns.getTown(tid)?.getName?.()||tid;
+
+            // On (re)calcule le plan d'actions à partir du template actif de
+            // cette ville UNIQUEMENT si la file est vide. Une file déjà
+            // partiellement traitée n'est jamais écrasée.
             const templateName=active[String(tid)];
+            let q=buildData.actionQueues?.[tid]||[];
             if(!q.length && templateName && buildData.templates?.[templateName]){
                 buildData.actionQueues[tid]=queuePlanForTown(tid,buildData.templates[templateName]);
                 buildData.queues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='building').map(a=>({buildingId:a.buildingId,level:a.level}));
                 buildData.researchQueues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='research').map(a=>a.rid);
                 saveData();
+                q=buildData.actionQueues[tid]||[];
             }
-            if((buildData.actionQueues?.[tid]||[]).length){
-                // Correctif : chaque ville est isolée dans son propre try/catch.
-                // Avant, une exception inattendue (sélecteur DOM manquant,
-                // propriété undefined, etc.) sur UNE ville arrêtait toute la
-                // boucle "for" et empêchait le passage aux villes suivantes,
-                // y compris lors des routines ultérieures (même ville rebloquée
-                // en premier à chaque fois).
-                let result;
-                try{
-                    result=await processTownActionQueue(tid);
-                }catch(e){
-                    log('BUILD', `${uw.ITowns.getTown(tid)?.getName?.()||tid}: erreur inattendue (${e.message}) → passage à la ville suivante`, 'error');
-                    result={blocked:true, reason:'exception: '+e.message};
-                }
-                if(result?.blocked){
-                    routineBlockedTowns.add(String(tid));
-                    log('BUILD',`${uw.ITowns.getTown(tid)?.getName?.()||tid}: passage a la ville suivante (${result.reason})`,'info');
-                }
-                if(buildData.enabled) await sleep(humanTownDelay());
+
+            if(!q.length){
+                // Rien à faire pour cette ville (pas de template actif ou file
+                // déjà entièrement traitée) : on passe directement à la suivante.
+                continue;
             }
+
+            log('BUILD',`${townLabel}: debut du traitement (${q.length} action(s) en file)`,'info');
+
+            // Chaque ville est isolée dans son propre try/catch. Avant, une
+            // exception inattendue (sélecteur DOM manquant, propriété
+            // undefined, etc.) sur UNE ville arrêtait toute la boucle "for" et
+            // empêchait le passage aux villes suivantes, y compris lors des
+            // routines ultérieures (même ville rebloquée en premier à chaque fois).
+            let result;
+            try{
+                result=await processTownActionQueue(tid);
+            }catch(e){
+                log('BUILD', `${townLabel}: erreur inattendue (${e.message}) → passage à la ville suivante`, 'error');
+                result={blocked:true, reason:'exception: '+e.message};
+            }
+
+            if(result?.blocked){
+                routineBlockedTowns.add(String(tid));
+                log('BUILD',`${townLabel}: passage a la ville suivante (${result.reason})`,'info');
+            } else {
+                log('BUILD',`${townLabel}: file terminee pour cette routine`,'info');
+            }
+
+            if(buildData.enabled) await sleep(humanTownDelay());
         }
+
+        log('BUILD','Routine terminee, en attente du prochain cycle','info');
     }finally{processingAllQueues=false;processingTownId=null;}
 }
 
