@@ -717,72 +717,43 @@ function syncTemplateUIForCurrentTown(force=false){
 
 async function switchToTownHumanized(tid){
     tid=String(tid);
-    if(String(uw.Game?.townId)===tid){
-        syncTemplateUIForCurrentTown(true);
+    if(String(uw.Game && uw.Game.townId || '')===tid){
+        try{ syncTemplateUIForCurrentTown(true); }catch(e){}
         return true;
     }
-    const waitForTown=async(target,timeoutMs=7000)=>{
-        const deadline=Date.now()+timeoutMs;
+    try{
+        if(uw.HelperTown && typeof uw.HelperTown.townSwitch==='function'){
+            await uw.HelperTown.townSwitch(Number(tid));
+        }else if(uw.HelperTown && typeof uw.HelperTown.switchToTown==='function'){
+            await uw.HelperTown.switchToTown(Number(tid));
+        }else if(uw.ITowns && typeof uw.ITowns.setCurrentTown==='function'){
+            uw.ITowns.setCurrentTown(Number(tid));
+        }else{
+            log('BUILD', 'Aucune méthode de changement de ville disponible', 'error');
+            return false;
+        }
+
+        const deadline=Date.now()+7000;
         while(Date.now()<deadline){
-            const gameId=String(uw.Game?.townId||'');
-            const currentId=String(uw.ITowns?.getCurrentTown?.()?.id||'');
-            if(gameId===target || currentId===target){
-                if(gameId!==target && typeof uw.ITowns?.setCurrentTown==='function'){
-                    try{uw.ITowns.setCurrentTown(Number(target));}catch(e){}
-                    await sleep(120);
+            const gameTown=String(uw.Game && uw.Game.townId || '');
+            const currentTown=uw.ITowns && typeof uw.ITowns.getCurrentTown==='function' ? uw.ITowns.getCurrentTown() : null;
+            const currentId=currentTown && currentTown.id!==undefined ? String(currentTown.id) : '';
+            if(gameTown===tid || currentId===tid){
+                if(gameTown!==tid && uw.ITowns && typeof uw.ITowns.setCurrentTown==='function'){
+                    try{ uw.ITowns.setCurrentTown(Number(tid)); }catch(e){}
+                    await sleep(150);
                 }
-                if(String(uw.Game?.townId)===target){
+                if(String(uw.Game && uw.Game.townId || '')===tid){
                     await sleep(humanTownDelay());
-                    syncTemplateUIForCurrentTown(true);
+                    try{ syncTemplateUIForCurrentTown(true); }catch(e){}
                     return true;
                 }
             }
-            await sleep(120);
+            await sleep(150);
         }
-        return false;
-    };
-    try{
-        if(typeof uw.HelperTown?.townSwitch==='function'){
-            try{
-                await uw.HelperTown.townSwitch(Number(tid));
-                if(await waitForTown(tid)) return true;
-            }catch(e){ log('BUILD',`townSwitch direct échoué pour ${tid}: ${e.message}`,'info'); }
-        }
-        if(typeof uw.HelperTown?.switchToTown==='function'){
-            try{
-                await uw.HelperTown.switchToTown(Number(tid));
-                if(await waitForTown(tid)) return true;
-            }catch(e){ log('BUILD',`switchToTown direct échoué pour ${tid}: ${e.message}`,'info'); }
-        }
-
-        const ids=getSelectedTownGroupIds().map(String);
-        const current=String(uw.Game?.townId||'');
-        const from=ids.indexOf(current), to=ids.indexOf(tid);
-        if(from>=0 && to>=0 && from!==to){
-            const forward=to>from;
-            const steps=Math.abs(to-from)+2;
-            const selector=forward
-                ? '.btn_next_town.button_arrow.right:visible, #ui_box .btn_next_town.button_arrow.right:visible'
-                : '.btn_prev_town.button_arrow.left:visible, #ui_box .btn_prev_town.button_arrow.left:visible';
-            for(let i=0;i<steps;i++){
-                if(String(uw.Game?.townId)===tid) break;
-                const $arrow=uw.$(selector).first();
-                if(!$arrow.length) break;
-                $arrow.trigger('click');
-                await sleep(randomDelay(350,750));
-            }
-            if(await waitForTown(tid,4000)) return true;
-        }
-
-        if(typeof uw.ITowns?.setCurrentTown==='function'){
-            try{
-                uw.ITowns.setCurrentTown(Number(tid));
-                if(await waitForTown(tid,5000)) return true;
-            }catch(e){ log('BUILD',`setCurrentTown échoué pour ${tid}: ${e.message}`,'info'); }
-        }
-        log('BUILD',`Impossible de passer à la ville ${tid} (actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
+        log('BUILD', 'Changement vers la ville '+tid+' non confirme (ville actuelle: '+String(uw.Game && uw.Game.townId || 'inconnue')+')', 'error');
     }catch(e){
-        log('BUILD',`Erreur changement vers la ville ${tid}: ${e.message}`,'error');
+        log('BUILD', 'Impossible de passer a la ville '+tid+': '+e.message, 'error');
     }
     return false;
 }
@@ -1759,3 +1730,7 @@ function loadData() {
             buildData.settings = { interval: 10, webhook: '', humanizer: true, humanizerMinDelay: 1000, humanizerMaxDelay: 2000, humanizerTownMinDelay: 1200, humanizerTownMaxDelay: 2400, ...(buildData.settings||{}) };
             const allowedIntervals=[5,10,20,40];
             if(!allowedIntervals.includes(Number(buildData.settings.interval))) buildData.settings.interval=10;
+            Object.values(buildData.templates).forEach(t=>Object.keys(t||{}).forEach(k=>{if((RESEARCH_FALLBACK[k]||getResearchData(k))&&!k.startsWith(RESEARCH_KEY_PREFIX)){t[RESEARCH_KEY_PREFIX+k]=t[k];delete t[k];}}));
+        } catch(e) {}
+    }
+}
