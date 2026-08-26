@@ -717,42 +717,73 @@ function syncTemplateUIForCurrentTown(force=false){
 
 async function switchToTownHumanized(tid){
     tid=String(tid);
-    if(String(uw.Game?.townId)===tid) return true;
-    try{
-        // Grepolis/GrepoAuto expose actuellement le changement de ville via
-        // HelperTown.townSwitch(). L'ancien switchToTown() peut ne pas exister.
-        let switched=false;
-        if(typeof uw.HelperTown?.townSwitch==='function'){
-            await uw.HelperTown.townSwitch(Number(tid));
-            switched=true;
-        }else if(typeof uw.HelperTown?.switchToTown==='function'){
-            await uw.HelperTown.switchToTown(Number(tid));
-            switched=true;
-        }else if(typeof uw.ITowns?.setCurrentTown==='function'){
-            uw.ITowns.setCurrentTown(Number(tid));
-            switched=true;
+    if(String(uw.Game?.townId)===tid){
+        syncTemplateUIForCurrentTown(true);
+        return true;
+    }
+    const waitForTown=async(target,timeoutMs=7000)=>{
+        const deadline=Date.now()+timeoutMs;
+        while(Date.now()<deadline){
+            const gameId=String(uw.Game?.townId||'');
+            const currentId=String(uw.ITowns?.getCurrentTown?.()?.id||'');
+            if(gameId===target || currentId===target){
+                if(gameId!==target && typeof uw.ITowns?.setCurrentTown==='function'){
+                    try{uw.ITowns.setCurrentTown(Number(target));}catch(e){}
+                    await sleep(120);
+                }
+                if(String(uw.Game?.townId)===target){
+                    await sleep(humanTownDelay());
+                    syncTemplateUIForCurrentTown(true);
+                    return true;
+                }
+            }
+            await sleep(120);
         }
-        if(!switched){
-            log('BUILD',`Impossible de passer a la ville ${tid}: aucune methode de changement de ville disponible`,'error');
-            return false;
+        return false;
+    };
+    try{
+        if(typeof uw.HelperTown?.townSwitch==='function'){
+            try{
+                await uw.HelperTown.townSwitch(Number(tid));
+                if(await waitForTown(tid)) return true;
+            }catch(e){ log('BUILD',`townSwitch direct échoué pour ${tid}: ${e.message}`,'info'); }
+        }
+        if(typeof uw.HelperTown?.switchToTown==='function'){
+            try{
+                await uw.HelperTown.switchToTown(Number(tid));
+                if(await waitForTown(tid)) return true;
+            }catch(e){ log('BUILD',`switchToTown direct échoué pour ${tid}: ${e.message}`,'info'); }
         }
 
-        // Attendre que Grepolis ait réellement changé Game.townId avant
-        // d'ouvrir le Sénat/Académie de la nouvelle ville.
-        const timeout=Date.now()+Math.max(5000,humanTownDelay()+3500);
-        while(Date.now()<timeout){
-            if(String(uw.Game?.townId)===tid){
-                const currentId=String(uw.ITowns?.getCurrentTown?.()?.id||tid);
-                if(currentId!==tid && typeof uw.ITowns?.setCurrentTown==='function'){
-                    try{ uw.ITowns.setCurrentTown(Number(tid)); }catch(e){}
-                }
-                await sleep(humanTownDelay());
-                return String(uw.Game?.townId)===tid;
+        const ids=getSelectedTownGroupIds().map(String);
+        const current=String(uw.Game?.townId||'');
+        const from=ids.indexOf(current), to=ids.indexOf(tid);
+        if(from>=0 && to>=0 && from!==to){
+            const forward=to>from;
+            const steps=Math.abs(to-from)+2;
+            const selector=forward
+                ? '.btn_next_town.button_arrow.right:visible, #ui_box .btn_next_town.button_arrow.right:visible'
+                : '.btn_prev_town.button_arrow.left:visible, #ui_box .btn_prev_town.button_arrow.left:visible';
+            for(let i=0;i<steps;i++){
+                if(String(uw.Game?.townId)===tid) break;
+                const $arrow=uw.$(selector).first();
+                if(!$arrow.length) break;
+                $arrow.trigger('click');
+                await sleep(randomDelay(350,750));
             }
-            await sleep(150);
+            if(await waitForTown(tid,4000)) return true;
         }
-        log('BUILD',`Changement vers la ville ${tid} non confirme (ville actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
-    }catch(e){ log('BUILD',`Impossible de passer a la ville ${tid}: ${e.message}`,'error'); }
+
+        if(typeof uw.ITowns?.setCurrentTown==='function'){
+            try{
+                uw.ITowns.setCurrentTown(Number(tid));
+                if(await waitForTown(tid,5000)) return true;
+            }catch(e){ log('BUILD',`setCurrentTown échoué pour ${tid}: ${e.message}`,'info'); }
+        }
+        log('BUILD',`Impossible de passer à la ville ${tid} (actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
+    }catch(e){
+        log('BUILD',`Erreur changement vers la ville ${tid}: ${e.message}`,'error');
+    }
     return false;
 }
 
@@ -959,7 +990,7 @@ async function processAllQueues(){
     processingAllQueues=true;
     routineBlockedTowns=new Set();
     try{
-        const towns=Object.values(uw.ITowns?.getTowns?.()||{}).map(t=>String(t.id)).sort((a,b)=>Number(a)-Number(b));
+        const towns=getSelectedTownGroupIds().map(String);
         const active=buildData.activeTemplates||{};
         for(const tid of towns){
             if(!buildData.enabled) break;
@@ -1728,7 +1759,3 @@ function loadData() {
             buildData.settings = { interval: 10, webhook: '', humanizer: true, humanizerMinDelay: 1000, humanizerMaxDelay: 2000, humanizerTownMinDelay: 1200, humanizerTownMaxDelay: 2400, ...(buildData.settings||{}) };
             const allowedIntervals=[5,10,20,40];
             if(!allowedIntervals.includes(Number(buildData.settings.interval))) buildData.settings.interval=10;
-            Object.values(buildData.templates).forEach(t=>Object.keys(t||{}).forEach(k=>{if((RESEARCH_FALLBACK[k]||getResearchData(k))&&!k.startsWith(RESEARCH_KEY_PREFIX)){t[RESEARCH_KEY_PREFIX+k]=t[k];delete t[k];}}));
-        } catch(e) {}
-    }
-}
