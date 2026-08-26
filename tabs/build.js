@@ -1,1762 +1,566 @@
-// Builder revision 2026-08-25 — bâtiments actuels + prérequis visuels + recherches
-const uw = module.uw;
-const log = module.log;
-const GM_getValue = module.GM_getValue;
-const GM_setValue = module.GM_setValue;
-const GM_xmlhttpRequest = module.GM_xmlhttpRequest;
+(function() {
+    'use strict';
 
-// Données Grepolis dynamiques : alignées sur GameData utilisé par GrepolisInjected.
-// On n'utilise plus l'ancien sprite atlas du wiki pour identifier les bâtiments.
-const NAMES = {
-    main:'Senat', lumber:'Scierie', farm:'Ferme', stoner:'Carriere', storage:'Entrepot',
-    ironer:'Mine', barracks:'Caserne', temple:'Temple', market:'Marche', docks:'Port',
-    academy:'Academie', wall:'Remparts', hide:'Grotte', thermal:'Thermes', library:'Bibliotheque',
-    lighthouse:'Phare', tower:'Tour', statue:'Statue', oracle:'Oracle',
-    trade_office:'Comptoir', theater:'Theatre'
-};
-const NORMAL_BUILDINGS = ['main','lumber','farm','stoner','storage','ironer','barracks','temple','market','docks','academy','wall','hide'];
-const SPECIAL_LEFT = ['theater','thermal','library','lighthouse'];
-const SPECIAL_RIGHT = ['tower','statue','oracle','trade_office'];
-
-const BUILDING_MAX_LEVELS = {
-    main:25,lumber:40,farm:45,stoner:40,storage:35,ironer:40,barracks:30,temple:30,
-    market:30,docks:30,academy:36,wall:25,hide:10,
-    theater:1,thermal:1,library:1,lighthouse:1,tower:1,statue:1,oracle:1,trade_office:1
-};
-
-// Liste issue directement de Palette.tsx de l'autre script.
-const RESEARCH_KEY_PREFIX = '__research__';
-
-// Ordre conforme au tableau du Wiki FR : 1 / 4 / 7 / 10 / 13 / 16 / 19 / 22 / 25 / 28 / 31 / 34.
-// Les identifiants sont ceux utilisés par l'autre script (GameData/GrepoAuto).
-const RESEARCH_LEVEL_GROUPS = {
-    1:  ['slinger','archer','town_guard'],
-    4:  ['hoplite','meteorology'],
-    7:  ['espionage','diplomacy','pottery'],
-    10: ['rider','architecture','instructor'],
-    13: ['bireme','building_crane','shipwright','colonize_ship'],
-    16: ['chariot','attack_ship','conscription'],
-    19: ['demolition_ship','catapult','cryptography','democracy'],
-    22: ['small_transporter','plow','berth'],
-    25: ['trireme','phalanx','breach','mathematics'],
-    28: ['ram','cartography','take_over','take_over_old'],
-    31: ['stone_storm','temple_looting','divine_selection'],
-    34: ['combat_experience','strong_wine','set_sail']
-};
-
-const RESEARCH_IDS = [...new Set(Object.values(RESEARCH_LEVEL_GROUPS).flat())];
-const RESEARCH_FALLBACK = {
-    slinger:{name:'Frondeur',academy:1}, archer:{name:'Archer',academy:1}, town_guard:{name:'Gardes de la cité',academy:1},
-    hoplite:{name:'Hoplite',academy:4}, meteorology:{name:'Météorologie',academy:4},
-    espionage:{name:'Espionnage',academy:7}, diplomacy:{name:'Loyauté des villageois',academy:7}, pottery:{name:'Céramique',academy:7},
-    rider:{name:'Cavalier',academy:10}, architecture:{name:'Architecture',academy:10}, instructor:{name:'Instructeur',academy:10},
-    bireme:{name:'Birème',academy:13}, building_crane:{name:'Grue',academy:13}, shipwright:{name:'Constructeur naval',academy:13}, colonize_ship:{name:'Navire de colonisation',academy:13},
-    chariot:{name:'Char',academy:16}, attack_ship:{name:'Bateau-feu',academy:16}, conscription:{name:'Conscription',academy:16},
-    demolition_ship:{name:'Brûlot',academy:19}, catapult:{name:'Catapulte',academy:19}, cryptography:{name:'Cryptographie',academy:19}, democracy:{name:'Démocratie',academy:19},
-    small_transporter:{name:'Navire de transport rapide',academy:22}, plow:{name:'Charrue',academy:22}, berth:{name:'Couchettes',academy:22},
-    trireme:{name:'Trière',academy:25}, phalanx:{name:'Phalange',academy:25}, breach:{name:'Percée',academy:25}, mathematics:{name:'Mathématiques',academy:25},
-    ram:{name:'Bélier',academy:28}, cartography:{name:'Cartographie',academy:28}, take_over:{name:'Conquête',academy:28}, take_over_old:{name:'Révolte',academy:28},
-    stone_storm:{name:'Grêle de pierres',academy:31}, temple_looting:{name:'Pillage de temple',academy:31}, divine_selection:{name:'Sélection divine',academy:31},
-    combat_experience:{name:'Expérience de combat',academy:34}, strong_wine:{name:'Vin puissant',academy:34}, set_sail:{name:'Mettre les voiles',academy:34},
-    // Variantes présentes dans l'autre script : conservées si GameData les expose.
-    booty_bpv:{name:'Butin',academy:7}, booty:{name:'Butin',academy:7}
-};
-
-
-function getBuildingData(bid){ return uw.GameData?.buildings?.[bid] || null; }
-function getBuildingName(bid){ return getBuildingData(bid)?.name || NAMES[bid] || bid; }
-function getBuildingMaxLevel(bid){ return Number(getBuildingData(bid)?.max_level ?? BUILDING_MAX_LEVELS[bid] ?? 30); }
-
-// Prérequis bâtiments : Grepolis n'expose pas toujours ces données sous la même
-// propriété selon la version du client. On essaie plusieurs formats natifs puis
-// on utilise une table de secours correspondant aux bâtiments actuels.
-const BUILDING_DEPENDENCY_FALLBACK = {
-    // Bâtiments disponibles dès le début / sans prérequis de construction.
-    main:[],
-    lumber:[],
-    farm:[],
-    stoner:[],
-    storage:[],
-
-    // Bâtiments normaux.
-    ironer:[['lumber',1]],
-    barracks:[['ironer',1],['main',2],['farm',3],['lumber',1]],
-    temple:[['stoner',1]],
-    market:[['main',3],['storage',5]],
-    docks:[['main',14],['lumber',15],['ironer',10]],
-    academy:[['main',8],['farm',6],['barracks',5]],
-    wall:[['main',5],['temple',3]],
-    hide:[['main',10],['storage',7],['market',4]],
-
-    // Bâtiments spéciaux — emplacement gauche.
-    theater:[['main',24],['lumber',35],['ironer',32],['docks',5],['academy',5]],
-    thermal:[['main',24],['farm',35],['docks',5],['academy',5]],
-    library:[['main',24],['docks',5],['academy',20]],
-    lighthouse:[['main',24],['docks',20],['academy',5]],
-
-    // Bâtiments spéciaux — emplacement droit.
-    tower:[['main',21],['wall',20],['temple',5],['market',5]],
-    statue:[['main',21],['temple',12],['market',5]],
-    oracle:[['main',21],['hide',10],['market',5],['temple',5]],
-    trade_office:[['main',21],['market',15],['temple',5]]
-};
-
-function normalizeBuildingDependencies(raw){
-    if(!raw) return [];
-    if(Array.isArray(raw)){
-        const rows=[];
-        for(const item of raw){
-            if(Array.isArray(item) && item.length>=2){
-                const id=String(item[0]), lvl=Number(item[1]);
-                if(Number.isFinite(lvl) && lvl>0) rows.push([id,lvl]);
-            }else if(item && typeof item==='object'){
-                const id=item.building||item.id||item.type||item.building_id;
-                const lvl=item.level??item.required_level??item.value;
-                const n=Number(lvl);
-                if(id && Number.isFinite(n) && n>0) rows.push([String(id),n]);
-            }
-        }
-        return rows.filter(([id])=>NORMAL_BUILDINGS.includes(id)||SPECIAL_LEFT.includes(id)||SPECIAL_RIGHT.includes(id));
-    }
-    if(typeof raw==='object'){
-        const nested=raw.buildings||raw.building||raw.dependencies||raw.requirements||raw.prerequisites;
-        if(nested && nested!==raw){
-            const n=normalizeBuildingDependencies(nested);
-            if(n.length) return n;
-        }
-        return Object.entries(raw)
-            .map(([id,lvl])=>[String(id),Number(typeof lvl==='object' ? (lvl.level??lvl.required_level??lvl.value) : lvl)])
-            .filter(([id,lvl])=>(NORMAL_BUILDINGS.includes(id)||SPECIAL_LEFT.includes(id)||SPECIAL_RIGHT.includes(id))&&Number.isFinite(lvl)&&lvl>0);
-    }
-    return [];
-}
-
-function getBuildingDependencies(bid){
-    // Pour les bâtiments du Builder, la table explicite est la source de vérité.
-    // Cela évite qu'une structure GameData différente selon le monde/client
-    // masque ou remplace les prérequis attendus.
-    if(Object.prototype.hasOwnProperty.call(BUILDING_DEPENDENCY_FALLBACK,bid)){
-        return BUILDING_DEPENDENCY_FALLBACK[bid].map(([id,lvl])=>[id,lvl]);
-    }
-
-    const data=getBuildingData(bid);
-    const candidates=[
-        data?.dependencies,
-        data?.building_dependencies,
-        data?.requirements,
-        data?.prerequisites,
-        data?.build_dependencies,
-        data?.buildings?.dependencies,
-        data?.construction?.dependencies
+    const BASE_URL = 'https://ludovanschingen-jpg.github.io/AnphiUltimate';
+    const WHITELIST_URL = `${BASE_URL}/whitelist.json`;
+    const DISCORD_INVITE = 'https://discord.gg/54xUGVpxeb';
+    const VERSION = '2.3.0';
+    
+    const TABS_CONFIG = [
+        { id: 'info', name: 'Info', icon: '📢', script: 'tabs/info.js' },
+        { id: 'farm', name: 'Farm', icon: '🌾', script: 'tabs/farm.js' },
+        { id: 'autocamp', name: 'AutoCamp', icon: '🎯', script: 'tabs/autocamp.js' },
+        { id: 'build', name: 'Build', icon: '🏗️', script: 'tabs/build.js' },
+        { id: 'recruit', name: 'Recruit', icon: '⚔️', script: 'tabs/recruit.js' },
+        { id: 'naval', name: 'Naval', icon: '⚓', script: 'tabs/naval.js' },
+        { id: 'culture', name: 'Culture', icon: '🎭', script: 'tabs/culture.js' },
+        { id: 'calage', name: 'Calage', icon: '⏱️', script: 'tabs/calage.js' },
+        { id: 'commerce', name: 'Commerce', icon: '🏪', script: 'tabs/commerce.js' },
+        { id: 'dodge', name: 'Dodge', icon: '🛡️', script: 'tabs/dodge.js', disabled: true },
+        { id: 'settings', name: 'Parametres', icon: '⚙️', script: 'tabs/settings.js' }
     ];
-    for(const raw of candidates){
-        const deps=normalizeBuildingDependencies(raw);
-        if(deps.length) return deps;
-    }
-    return [];
-}
-function getResearchData(rid){ return uw.GameData?.researches?.[rid] || null; }
-function getResearchName(rid){ return getResearchData(rid)?.name || RESEARCH_FALLBACK[rid]?.name || rid; }
-function getResearchAcademyLevel(rid){
-    const data=getResearchData(rid);
-    const candidates=[
-        data?.building_dependencies?.academy,
-        data?.academy_level,
-        data?.academy,
-        data?.building_requirements?.academy,
-        RESEARCH_FALLBACK[rid]?.academy
-    ];
-    for(const v of candidates){ const n=Number(v); if(Number.isFinite(n)&&n>0) return n; }
-    return 0;
-}
-function getResearchIdsAvailable(){
-    const native=Object.keys(uw.GameData?.researches||{});
-    const available=RESEARCH_IDS.filter(rid=>native.length===0 || native.includes(rid));
-    const extras=native.filter(rid=>!RESEARCH_IDS.includes(rid)).filter(rid=>getResearchData(rid));
-    return [...new Set([...available,...extras])];
-}
-function getResearchSortKey(rid){
-    const level=getResearchAcademyLevel(rid);
-    const groups=Object.entries(RESEARCH_LEVEL_GROUPS);
-    for(let i=0;i<groups.length;i++){
-        const ids=groups[i][1];
-        const idx=ids.indexOf(rid);
-        if(idx!==-1) return [Number(groups[i][0]),idx,0];
-    }
-    return [level||999,999,1];
-}
-function getResearchIdsSorted(){
-    return getResearchIdsAvailable().sort((a,b)=>{
-        const ka=getResearchSortKey(a), kb=getResearchSortKey(b);
-        return ka[0]-kb[0] || ka[2]-kb[2] || ka[1]-kb[1] || getResearchName(a).localeCompare(getResearchName(b),'fr');
-    });
-}
 
-// Ancien mapping utilisé seulement pour reconnaître les intitulés du Sénat.
-const FR_TO_ID = {
-    senat:'main', sénat:'main', scierie:'lumber', ferme:'farm', carriere:'stoner', carrière:'stoner',
-    entrepot:'storage', entrepôt:'storage', mine:'ironer', "mine d'argent":'ironer', argent:'ironer',
-    caserne:'barracks', temple:'temple', marche:'market', marché:'market', port:'docks',
-    academie:'academy', académie:'academy', remparts:'wall', muraille:'wall', grotte:'hide',
-    thermes:'thermal', bibliotheque:'library', bibliothèque:'library', phare:'lighthouse', tour:'tower',
-    statue:'statue', 'statue divine':'statue', oracle:'oracle', comptoir:'trade_office', theatre:'theater', théâtre:'theater'
-};
+    var uw = (typeof unsafeWindow == 'undefined') ? window : unsafeWindow;
+    const loadedTabs = {};
+    let currentTab = 'info';
+    let panelOpen = false;
+    let logs = [];
+    let userAccess = null;
+    let whitelistData = null;
 
-// Reste du fallback conservé pour compatibilité avec les anciennes données.
-const REQUIREMENTS = {};
-let buildData = {
-    enabled: false,
-    gratisEnabled: false,
-    settings: { interval: 10, webhook: '', humanizer: true, humanizerMinDelay: 1000, humanizerMaxDelay: 2000, humanizerTownMinDelay: 1200, humanizerTownMaxDelay: 2400 },
-    stats: { built: 0, gratisClaimed: 0 },
-    queues: {},
-    researchQueues: {},
-    actionQueues: {},
-    activeTemplates: {},
-    templates: {},
-    nextCheckTime: 0
-};
+    function getPlayerName() { try { return uw.Game.player_name || 'Inconnu'; } catch(e) { return 'Inconnu'; } }
+    function getWorldName() { try { return uw.Game.world_id || window.location.hostname.split('.')[0] || 'Inconnu'; } catch(e) { return 'Inconnu'; } }
+    function getPlayerId() { try { return uw.Game.player_id || 0; } catch(e) { return 0; } }
 
-let senateWatcherInterval = null;
-let gratisInterval = null;
-let fillInterval = null;
-let templateEditOrder = [];
-let lastTemplateUiTownId = null;
+    // 1. TAILWIND CSS COMPLET + 2. LE PONT CSS (BRIDGE) POUR LA COMPATIBILITÉ
+    GM_addStyle(`
+        /*! tailwindcss v4.3.0 | MIT License | https://tailwindcss.com */@layer properties{@supports (((-webkit-hyphens:none)) and (not (margin-trim:inline))) or ((-moz-orient:inline) and (not (color:rgb(from red r g b)))){*,:before,:after,::backdrop{--tw-translate-x:0;--tw-translate-y:0;--tw-translate-z:0;--tw-rotate-x:initial;--tw-rotate-y:initial;--tw-rotate-z:initial;--tw-skew-x:initial;--tw-skew-y:initial;--tw-space-y-reverse:0;--tw-space-x-reverse:0;--tw-border-style:solid;--tw-leading:initial;--tw-font-weight:initial;--tw-tracking:initial;--tw-shadow:0 0 #0000;--tw-shadow-color:initial;--tw-shadow-alpha:100%;--tw-inset-shadow:0 0 #0000;--tw-inset-shadow-color:initial;--tw-inset-shadow-alpha:100%;--tw-ring-color:initial;--tw-ring-shadow:0 0 #0000;--tw-inset-ring-color:initial;--tw-inset-ring-shadow:0 0 #0000;--tw-ring-inset:initial;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-offset-shadow:0 0 #0000;--tw-outline-style:solid;--tw-blur:initial;--tw-brightness:initial;--tw-contrast:initial;--tw-grayscale:initial;--tw-hue-rotate:initial;--tw-invert:initial;--tw-opacity:initial;--tw-saturate:initial;--tw-sepia:initial;--tw-drop-shadow:initial;--tw-drop-shadow-color:initial;--tw-drop-shadow-alpha:100%;--tw-drop-shadow-size:initial;--tw-backdrop-blur:initial;--tw-backdrop-brightness:initial;--tw-backdrop-contrast:initial;--tw-backdrop-grayscale:initial;--tw-backdrop-hue-rotate:initial;--tw-backdrop-invert:initial;--tw-backdrop-opacity:initial;--tw-backdrop-saturate:initial;--tw-backdrop-sepia:initial;--tw-duration:initial;--tw-animation-delay:0s;--tw-animation-direction:normal;--tw-animation-duration:initial;--tw-animation-fill-mode:none;--tw-animation-iteration-count:1;--tw-enter-blur:0;--tw-enter-opacity:1;--tw-enter-rotate:0;--tw-enter-scale:1;--tw-enter-translate-x:0;--tw-enter-translate-y:0;--tw-exit-blur:0;--tw-exit-opacity:1;--tw-exit-rotate:0;--tw-exit-scale:1;--tw-exit-translate-x:0;--tw-exit-translate-y:0}}}@layer theme{:root,:host{--font-sans:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";--font-mono:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;--color-red-100:oklch(93.6% .032 17.717);--color-red-500:oklch(63.7% .237 25.331);--color-red-600:oklch(57.7% .245 27.325);--color-red-700:oklch(50.5% .213 27.518);--color-red-800:oklch(44.4% .177 26.899);--color-red-900:oklch(39.6% .141 25.723);--color-orange-500:oklch(70.5% .213 47.604);--color-orange-700:oklch(55.3% .195 38.402);--color-amber-100:oklch(96.2% .059 95.617);--color-amber-200:oklch(92.4% .12 95.746);--color-amber-500:oklch(76.9% .188 70.08);--color-amber-700:oklch(55.5% .163 48.998);--color-amber-800:oklch(47.3% .137 46.201);--color-amber-900:oklch(41.4% .112 45.904);--color-amber-950:oklch(27.9% .077 45.635);--color-yellow-300:oklch(90.5% .182 98.111);--color-yellow-400:oklch(85.2% .199 91.936);--color-yellow-500:oklch(79.5% .184 86.047);--color-yellow-600:oklch(68.1% .162 75.834);--color-yellow-700:oklch(55.4% .135 66.442);--color-yellow-900:oklch(42.1% .095 57.708);--color-green-100:oklch(96.2% .044 156.743);--color-green-500:oklch(72.3% .219 149.579);--color-green-600:oklch(62.7% .194 149.214);--color-green-700:oklch(52.7% .154 150.069);--color-green-800:oklch(44.8% .119 151.328);--color-emerald-100:oklch(95% .052 163.051);--color-emerald-800:oklch(43.2% .095 166.913);--color-emerald-950:oklch(26.2% .051 172.552);--color-sky-100:oklch(95.1% .026 236.824);--color-sky-800:oklch(44.3% .11 240.79);--color-sky-950:oklch(29.3% .066 243.157);--color-blue-400:oklch(70.7% .165 254.624);--color-blue-500:oklch(62.3% .214 259.815);--color-blue-600:oklch(54.6% .245 262.881);--color-gray-300:oklch(87.2% .01 258.338);--color-gray-400:oklch(70.7% .022 261.325);--color-gray-500:oklch(55.1% .027 264.364);--color-gray-600:oklch(44.6% .03 256.802);--color-gray-700:oklch(37.3% .034 259.733);--color-gray-800:oklch(27.8% .033 256.848);--color-black:#000;--color-white:#fff;--spacing:.25rem;--container-lg:32rem;--container-3xl:48rem;--text-xs:.75rem;--text-xs--line-height:calc(1 / .75);--text-sm:.875rem;--text-sm--line-height:calc(1.25 / .875);--text-base:1rem;--text-base--line-height: 1.5 ;--text-lg:1.125rem;--text-lg--line-height:calc(1.75 / 1.125);--text-xl:1.25rem;--text-xl--line-height:calc(1.75 / 1.25);--font-weight-medium:500;--font-weight-semibold:600;--font-weight-bold:700;--tracking-widest:.1em;--leading-snug:1.375;--leading-relaxed:1.625;--radius-xs:.125rem;--animate-spin:spin 1s linear infinite;--animate-pulse:pulse 2s cubic-bezier(.4, 0, .6, 1) infinite;--blur-sm:8px;--default-transition-duration:.15s;--default-transition-timing-function:cubic-bezier(.4, 0, .2, 1);--default-font-family:var(--font-sans);--default-mono-font-family:var(--font-mono)}}@layer base{*,:after,:before,::backdrop{box-sizing:border-box;border:0 solid;margin:0;padding:0}::file-selector-button{box-sizing:border-box;border:0 solid;margin:0;padding:0}html,:host{-webkit-text-size-adjust:100%;tab-size:4;line-height:1.5;font-family:var(--default-font-family,ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji");font-feature-settings:var(--default-font-feature-settings,normal);font-variation-settings:var(--default-font-variation-settings,normal);-webkit-tap-highlight-color:transparent}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;-webkit-text-decoration:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,samp,pre{font-family:var(--default-mono-font-family,ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);font-feature-settings:var(--default-mono-font-feature-settings,normal);font-variation-settings:var(--default-mono-font-variation-settings,normal);font-size:1em}small{font-size:80%}sub,sup{vertical-align:baseline;font-size:75%;line-height:0;position:relative}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}:-moz-focusring{outline:auto}progress{vertical-align:baseline}summary{display:list-item}ol,ul,menu{list-style:none}img,svg,video,canvas,audio,iframe,embed,object{vertical-align:middle;display:block}img,video{max-width:100%;height:auto}button,input,select,optgroup,textarea{font:inherit;font-feature-settings:inherit;font-variation-settings:inherit;letter-spacing:inherit;color:inherit;opacity:1;background-color:#0000;border-radius:0}::file-selector-button{font:inherit;font-feature-settings:inherit;font-variation-settings:inherit;letter-spacing:inherit;color:inherit;opacity:1;background-color:#0000;border-radius:0}:where(select:is([multiple],[size])) optgroup{font-weight:bolder}:where(select:is([multiple],[size])) optgroup option{padding-inline-start:20px}::file-selector-button{margin-inline-end:4px}::placeholder{opacity:1}@supports (not ((-webkit-appearance:-apple-pay-button))) or (contain-intrinsic-size:1px){::placeholder{color:currentColor}@supports (color:color-mix(in lab,red,red)){::placeholder{color:color-mix(in oklab,currentcolor 50%,transparent)}}}textarea{resize:vertical}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-date-and-time-value{min-height:1lh;text-align:inherit}::-webkit-datetime-edit{display:inline-flex}::-webkit-datetime-edit-fields-wrapper{padding:0}::-webkit-datetime-edit{padding-block:0}::-webkit-datetime-edit-year-field{padding-block:0}::-webkit-datetime-edit-month-field{padding-block:0}::-webkit-datetime-edit-day-field{padding-block:0}::-webkit-datetime-edit-hour-field{padding-block:0}::-webkit-datetime-edit-minute-field{padding-block:0}::-webkit-datetime-edit-second-field{padding-block:0}::-webkit-datetime-edit-millisecond-field{padding-block:0}::-webkit-datetime-edit-meridiem-field{padding-block:0}::-webkit-calendar-picker-indicator{line-height:1}:-moz-ui-invalid{box-shadow:none}button,input:where([type=button],[type=reset],[type=submit]){appearance:button}::file-selector-button{appearance:button}::-webkit-inner-spin-button{height:auto}::-webkit-outer-spin-button{height:auto}[hidden]:where(:not([hidden=until-found])){display:none!important}*{border-color:var(--border);outline-color:var(--ring)}@supports (color:color-mix(in lab,red,red)){*{outline-color:color-mix(in oklab,var(--ring) 50%,transparent)}}body{background-color:var(--background);color:var(--foreground)}}@layer components;@layer utilities{.\@container\/card-header{container:card-header/inline-size}.pointer-events-none{pointer-events:none}.collapse{visibility:collapse}.visible{visibility:visible}.sr-only{clip-path:inset(50%);white-space:nowrap;border-width:0;width:1px;height:1px;margin:-1px;padding:0;position:absolute;overflow:hidden}.absolute{position:absolute}.fixed{position:fixed}.relative{position:relative}.static{position:static}.sticky{position:sticky}.inset-0{inset:calc(var(--spacing) * 0)}.-top-1{top:calc(var(--spacing) * -1)}.top-0{top:calc(var(--spacing) * 0)}.top-1{top:calc(var(--spacing) * 1)}.top-4{top:calc(var(--spacing) * 4)}.top-\[50\%\]{top:50%}.top-px{top:1px}.-right-1{right:calc(var(--spacing) * -1)}.right-4{right:calc(var(--spacing) * 4)}.right-px{right:1px}.bottom-px{bottom:1px}.left-0{left:calc(var(--spacing) * 0)}.left-1{left:calc(var(--spacing) * 1)}.left-\[50\%\]{left:50%}.left-px{left:1px}.z-\[7008\]{z-index:7008}.z-\[7009\]{z-index:7009}.z-\[7010\]{z-index:7010}.col-span-full{grid-column:1/-1}.col-start-2{grid-column-start:2}.row-span-2{grid-row:span 2/span 2}.row-start-1{grid-row-start:1}.container{width:100%}@media (min-width:40rem){.container{max-width:40rem}}@media (min-width:48rem){.container{max-width:48rem}}@media (min-width:64rem){.container{max-width:64rem}}@media (min-width:80rem){.container{max-width:80rem}}@media (min-width:96rem){.container{max-width:96rem}}.-mx-1{margin-inline:calc(var(--spacing) * -1)}.mx-12{margin-inline:calc(var(--spacing) * 12)}.my-2{margin-block:calc(var(--spacing) * 2)}.mt-1{margin-top:calc(var(--spacing) * 1)}.mt-2{margin-top:calc(var(--spacing) * 2)}.mt-3{margin-top:calc(var(--spacing) * 3)}.mr-1{margin-right:calc(var(--spacing) * 1)}.mr-2{margin-right:calc(var(--spacing) * 2)}.mb-1{margin-bottom:calc(var(--spacing) * 1)}.mb-2{margin-bottom:calc(var(--spacing) * 2)}.mb-4{margin-bottom:calc(var(--spacing) * 4)}.ml-2{margin-left:calc(var(--spacing) * 2)}.ml-6{margin-left:calc(var(--spacing) * 6)}.ml-auto{margin-left:auto}.box-border{box-sizing:border-box}.block{display:block}.flex{display:flex}.grid{display:grid}.hidden{display:none}.inline{display:inline}.inline-block{display:inline-block}.inline-flex{display:inline-flex}.table{display:table}.size-4{width:calc(var(--spacing) * 4);height:calc(var(--spacing) * 4)}.size-5{width:calc(var(--spacing) * 5);height:calc(var(--spacing) * 5)}.size-6{width:calc(var(--spacing) * 6);height:calc(var(--spacing) * 6)}.size-9{width:calc(var(--spacing) * 9);height:calc(var(--spacing) * 9)}.h-3{height:calc(var(--spacing) * 3)}.h-4{height:calc(var(--spacing) * 4)}.h-5{height:calc(var(--spacing) * 5)}.h-6{height:calc(var(--spacing) * 6)}.h-8{height:calc(var(--spacing) * 8)}.h-9{height:calc(var(--spacing) * 9)}.h-10{height:calc(var(--spacing) * 10)}.h-12{height:calc(var(--spacing) * 12)}.h-16{height:calc(var(--spacing) * 16)}.h-60{height:calc(var(--spacing) * 60)}.h-\[1\.15rem\]{height:1.15rem}.h-\[50px\]{height:50px}.h-\[68px\]{height:68px}.h-\[81px\]{height:81px}.h-\[200px\]{height:200px}.h-full{height:100%}.h-px{height:1px}.max-h-52{max-height:calc(var(--spacing) * 52)}.max-h-\[300px\]{max-height:300px}.min-h-0{min-height:calc(var(--spacing) * 0)}.w-2\/3{width:66.6667%}.w-3{width:calc(var(--spacing) * 3)}.w-4{width:calc(var(--spacing) * 4)}.w-5{width:calc(var(--spacing) * 5)}.w-6{width:calc(var(--spacing) * 6)}.w-7{width:calc(var(--spacing) * 7)}.w-8{width:calc(var(--spacing) * 8)}.w-9{width:calc(var(--spacing) * 9)}.w-10{width:calc(var(--spacing) * 10)}.w-12{width:calc(var(--spacing) * 12)}.w-16{width:calc(var(--spacing) * 16)}.w-20{width:calc(var(--spacing) * 20)}.w-32{width:calc(var(--spacing) * 32)}.w-60{width:calc(var(--spacing) * 60)}.w-72{width:calc(var(--spacing) * 72)}.w-80{width:calc(var(--spacing) * 80)}.w-120{width:calc(var(--spacing) * 120)}.w-\[--radix-popover-trigger-width\]{width:--radix-popover-trigger-width}.w-\[50px\]{width:50px}.w-\[67px\]{width:67px}.w-\[80px\]{width:80px}.w-\[115px\]{width:115px}.w-\[120px\]{width:120px}.w-\[205px\]{width:205px}.w-fit{width:fit-content}.w-full{width:100%}.max-w-3xl{max-width:var(--container-3xl)}.max-w-\[50\%\]{max-width:50%}.max-w-\[calc\(100\%-2rem\)\]{max-width:calc(100% - 2rem)}.min-w-0{min-width:calc(var(--spacing) * 0)}.min-w-6{min-width:calc(var(--spacing) * 6)}.min-w-28{min-width:calc(var(--spacing) * 28)}.min-w-32{min-width:calc(var(--spacing) * 32)}.min-w-52{min-width:calc(var(--spacing) * 52)}.flex-1{flex:1}.flex-shrink-0,.shrink-0{flex-shrink:0}.flex-grow,.grow{flex-grow:1}.origin-\[var\(--radix-popover-content-transform-origin\)\]{transform-origin:var(--radix-popover-content-transform-origin)}.origin-top-left{transform-origin:0 0}.translate-x-\[-50\%\]{--tw-translate-x:-50%;translate:var(--tw-translate-x) var(--tw-translate-y)}.translate-y-\[-50\%\]{--tw-translate-y:-50%;translate:var(--tw-translate-x) var(--tw-translate-y)}.scale-\[1\.15\]{scale:1.15}.scale-\[1\.38\]{scale:1.38}.transform{transform:var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)}.animate-pulse{animation:var(--animate-pulse)}.animate-spin{animation:var(--animate-spin)}.cursor-default{cursor:default}.cursor-grab{cursor:grab}.cursor-not-allowed{cursor:not-allowed}.cursor-pointer{cursor:pointer}.cursor-text{cursor:text}.resize{resize:both}.scroll-py-1{scroll-padding-block:calc(var(--spacing) * 1)}.list-disc{list-style-type:disc}.appearance-none{appearance:none}.auto-rows-min{grid-auto-rows:min-content}.grid-cols-1{grid-template-columns:repeat(1,minmax(0,1fr))}.grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.grid-cols-\[1fr_auto\]{grid-template-columns:1fr auto}.grid-cols-\[1rem_5rem_1fr_auto\]{grid-template-columns:1rem 5rem 1fr auto}.grid-cols-\[180px_minmax\(0\,1fr\)\]{grid-template-columns:180px minmax(0,1fr)}.grid-cols-\[auto_1fr_1fr_auto\]{grid-template-columns:auto 1fr 1fr auto}.grid-rows-\[auto_auto\]{grid-template-rows:auto auto}.flex-col{flex-direction:column}.flex-col-reverse{flex-direction:column-reverse}.flex-row{flex-direction:row}.flex-nowrap{flex-wrap:nowrap}.flex-wrap{flex-wrap:wrap}.items-baseline{align-items:baseline}.items-center{align-items:center}.items-end{align-items:flex-end}.items-start{align-items:flex-start}.items-stretch{align-items:stretch}.justify-between{justify-content:space-between}.justify-center{justify-content:center}.justify-end{justify-content:flex-end}.justify-evenly{justify-content:space-evenly}.gap-0\.5{gap:calc(var(--spacing) * .5)}.gap-1{gap:calc(var(--spacing) * 1)}.gap-1\.5{gap:calc(var(--spacing) * 1.5)}.gap-2{gap:calc(var(--spacing) * 2)}.gap-3{gap:calc(var(--spacing) * 3)}.gap-4{gap:calc(var(--spacing) * 4)}.gap-6{gap:calc(var(--spacing) * 6)}:where(.space-y-1>:not(:last-child)){--tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 1) * var(--tw-space-y-reverse));margin-block-end:calc(calc(var(--spacing) * 1) * calc(1 - var(--tw-space-y-reverse)))}:where(.space-y-1\.5>:not(:last-child)){--tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 1.5) * var(--tw-space-y-reverse));margin-block-end:calc(calc(var(--spacing) * 1.5) * calc(1 - var(--tw-space-y-reverse)))}:where(.space-y-2>:not(:last-child)){--tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 2) * var(--tw-space-y-reverse));margin-block-end:calc(calc(var(--spacing) * 2) * calc(1 - var(--tw-space-y-reverse)))}:where(.space-y-3>:not(:last-child)){--tw-space-y-reverse:0;margin-block-start:calc(calc(var(--spacing) * 3) * var(--tw-space-y-reverse));margin-block-end:calc(calc(var(--spacing) * 3) * calc(1 - var(--tw-space-y-reverse)))}:where(.space-x-2>:not(:last-child)){--tw-space-x-reverse:0;margin-inline-start:calc(calc(var(--spacing) * 2) * var(--tw-space-x-reverse));margin-inline-end:calc(calc(var(--spacing) * 2) * calc(1 - var(--tw-space-x-reverse)))}.self-start{align-self:flex-start}.justify-self-end{justify-self:flex-end}.truncate{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.overflow-auto{overflow:auto}.overflow-hidden{overflow:hidden}.overflow-x-hidden{overflow-x:hidden}.overflow-y-auto{overflow-y:auto}.overflow-y-clip{overflow-y:clip}.rounded{border-radius:.25rem}.rounded-full{border-radius:3.40282e38px}.rounded-lg{border-radius:var(--radius)}.rounded-md{border-radius:calc(var(--radius) - 2px)}.rounded-sm{border-radius:calc(var(--radius) - 4px)}.rounded-xl{border-radius:calc(var(--radius) + 4px)}.rounded-xs{border-radius:var(--radius-xs)}.border{border-style:var(--tw-border-style);border-width:1px}.border-2{border-style:var(--tw-border-style);border-width:2px}.border-4{border-style:var(--tw-border-style);border-width:4px}.border-t{border-top-style:var(--tw-border-style);border-top-width:1px}.border-b{border-bottom-style:var(--tw-border-style);border-bottom-width:1px}.border-l{border-left-style:var(--tw-border-style);border-left-width:1px}.border-dashed{--tw-border-style:dashed;border-style:dashed}.border-\[\#4f8f55\]{border-color:#4f8f55}.border-\[\#6b3f15\]{border-color:#6b3f15}.border-\[\#7a1c1c\]{border-color:#7a1c1c}.border-\[\#7b5a28\]{border-color:#7b5a28}.border-\[\#7f352c\]{border-color:#7f352c}.border-\[\#8a6a35\]{border-color:#8a6a35}.border-\[\#8a6a35\]\/70{border-color:#8a6a35b3}.border-\[\#8b6f3d\]{border-color:#8b6f3d}.border-\[\#8f6b3d\]{border-color:#8f6b3d}.border-\[\#9b7a42\]{border-color:#9b7a42}.border-\[\#9b7a48\]{border-color:#9b7a48}.border-\[\#47714a\]{border-color:#47714a}.border-\[\#71502d\]{border-color:#71502d}.border-\[\#a18452\]{border-color:#a18452}.border-amber-500\/60{border-color:#f99c0099}@supports (color:color-mix(in lab,red,red)){.border-amber-500\/60{border-color:color-mix(in oklab,var(--color-amber-500) 60%,transparent)}}.border-amber-700{border-color:var(--color-amber-700)}.border-amber-800{border-color:var(--color-amber-800)}.border-black\/10{border-color:#0000001a}@supports (color:color-mix(in lab,red,red)){.border-black\/10{border-color:color-mix(in oklab,var(--color-black) 10%,transparent)}}.border-black\/20{border-color:#0003}@supports (color:color-mix(in lab,red,red)){.border-black\/20{border-color:color-mix(in oklab,var(--color-black) 20%,transparent)}}.border-black\/30{border-color:#0000004d}@supports (color:color-mix(in lab,red,red)){.border-black\/30{border-color:color-mix(in oklab,var(--color-black) 30%,transparent)}}.border-blue-500{border-color:var(--color-blue-500)}.border-current{border-color:currentColor}.border-emerald-800{border-color:var(--color-emerald-800)}.border-gray-400{border-color:var(--color-gray-400)}.border-gray-500{border-color:var(--color-gray-500)}.border-gray-500\/40{border-color:#6a728266}@supports (color:color-mix(in lab,red,red)){.border-gray-500\/40{border-color:color-mix(in oklab,var(--color-gray-500) 40%,transparent)}}.border-gray-600{border-color:var(--color-gray-600)}.border-green-700{border-color:var(--color-green-700)}.border-input{border-color:var(--input)}.border-orange-500{border-color:var(--color-orange-500)}.border-red-700{border-color:var(--color-red-700)}.border-red-900{border-color:var(--color-red-900)}.border-red-900\/60{border-color:#82181a99}@supports (color:color-mix(in lab,red,red)){.border-red-900\/60{border-color:color-mix(in oklab,var(--color-red-900) 60%,transparent)}}.border-sky-800{border-color:var(--color-sky-800)}.border-transparent{border-color:#0000}.border-white\/30{border-color:#ffffff4d}@supports (color:color-mix(in lab,red,red)){.border-white\/30{border-color:color-mix(in oklab,var(--color-white) 30%,transparent)}}.border-yellow-400{border-color:var(--color-yellow-400)}.border-yellow-400\/80{border-color:#fac800cc}@supports (color:color-mix(in lab,red,red)){.border-yellow-400\/80{border-color:color-mix(in oklab,var(--color-yellow-400) 80%,transparent)}}.border-yellow-500{border-color:var(--color-yellow-500)}.border-yellow-600{border-color:var(--color-yellow-600)}.border-t-transparent{border-top-color:#0000}.bg-\[\#6b9a65\]{background-color:#6b9a65}.bg-\[\#28649a\]{background-color:#28649a}.bg-\[\#c96b59\]{background-color:#c96b59}.bg-\[\#d8ebbc\]{background-color:#d8ebbc}.bg-\[\#d86a50\]{background-color:#d86a50}.bg-\[\#e4c789\]{background-color:#e4c789}.bg-\[\#e9d59b\]{background-color:#e9d59b}.bg-\[\#ead79f\]{background-color:#ead79f}.bg-\[\#f4dfb5\]{background-color:#f4dfb5}.bg-\[\#f5e9c5\]{background-color:#f5e9c5}.bg-\[\#f8e7bd\]\/80{background-color:#f8e7bdcc}.bg-\[\#f8e7bd\]\/85{background-color:#f8e7bdd9}.bg-\[\#f8ecd0\]{background-color:#f8ecd0}.bg-amber-100{background-color:var(--color-amber-100)}.bg-amber-200{background-color:var(--color-amber-200)}.bg-background{background-color:var(--background)}.bg-black\/5{background-color:#0000000d}@supports (color:color-mix(in lab,red,red)){.bg-black\/5{background-color:color-mix(in oklab,var(--color-black) 5%,transparent)}}.bg-black\/10{background-color:#0000001a}@supports (color:color-mix(in lab,red,red)){.bg-black\/10{background-color:color-mix(in oklab,var(--color-black) 10%,transparent)}}.bg-black\/30{background-color:#0000004d}@supports (color:color-mix(in lab,red,red)){.bg-black\/30{background-color:color-mix(in oklab,var(--color-black) 30%,transparent)}}.bg-black\/40{background-color:#0006}@supports (color:color-mix(in lab,red,red)){.bg-black\/40{background-color:color-mix(in oklab,var(--color-black) 40%,transparent)}}.bg-black\/50{background-color:#00000080}@supports (color:color-mix(in lab,red,red)){.bg-black\/50{background-color:color-mix(in oklab,var(--color-black) 50%,transparent)}}.bg-black\/60{background-color:#0009}@supports (color:color-mix(in lab,red,red)){.bg-black\/60{background-color:color-mix(in oklab,var(--color-black) 60%,transparent)}}.bg-black\/\[0\.03\]{background-color:#00000008}@supports (color:color-mix(in lab,red,red)){.bg-black\/\[0\.03\]{background-color:color-mix(in oklab,var(--color-black) 3%,transparent)}}.bg-blue-500{background-color:var(--color-blue-500)}.bg-border{background-color:var(--border)}.bg-card{background-color:var(--card)}.bg-destructive{background-color:var(--destructive)}.bg-emerald-100{background-color:var(--color-emerald-100)}.bg-green-100\/60{background-color:#dcfce799}@supports (color:color-mix(in lab,red,red)){.bg-green-100\/60{background-color:color-mix(in oklab,var(--color-green-100) 60%,transparent)}}.bg-green-600\/80{background-color:#00a544cc}@supports (color:color-mix(in lab,red,red)){.bg-green-600\/80{background-color:color-mix(in oklab,var(--color-green-600) 80%,transparent)}}.bg-green-700{background-color:var(--color-green-700)}.bg-green-700\/80{background-color:#008138cc}@supports (color:color-mix(in lab,red,red)){.bg-green-700\/80{background-color:color-mix(in oklab,var(--color-green-700) 80%,transparent)}}.bg-popover{background-color:var(--popover)}.bg-primary{background-color:var(--primary)}.bg-red-100\/60{background-color:#ffe2e299}@supports (color:color-mix(in lab,red,red)){.bg-red-100\/60{background-color:color-mix(in oklab,var(--color-red-100) 60%,transparent)}}.bg-red-700{background-color:var(--color-red-700)}.bg-red-900\/30{background-color:#82181a4d}@supports (color:color-mix(in lab,red,red)){.bg-red-900\/30{background-color:color-mix(in oklab,var(--color-red-900) 30%,transparent)}}.bg-secondary{background-color:var(--secondary)}.bg-sky-100{background-color:var(--color-sky-100)}.bg-transparent{background-color:#0000}.bg-white\/10{background-color:#ffffff1a}@supports (color:color-mix(in lab,red,red)){.bg-white\/10{background-color:color-mix(in oklab,var(--color-white) 10%,transparent)}}.bg-white\/20{background-color:#fff3}@supports (color:color-mix(in lab,red,red)){.bg-white\/20{background-color:color-mix(in oklab,var(--color-white) 20%,transparent)}}.bg-white\/25{background-color:#ffffff40}@supports (color:color-mix(in lab,red,red)){.bg-white\/25{background-color:color-mix(in oklab,var(--color-white) 25%,transparent)}}.bg-white\/30{background-color:#ffffff4d}@supports (color:color-mix(in lab,red,red)){.bg-white\/30{background-color:color-mix(in oklab,var(--color-white) 30%,transparent)}}.bg-white\/80{background-color:#fffc}@supports (color:color-mix(in lab,red,red)){.bg-white\/80{background-color:color-mix(in oklab,var(--color-white) 80%,transparent)}}.bg-yellow-400{background-color:var(--color-yellow-400)}.bg-yellow-500\/10{background-color:#edb2001a}@supports (color:color-mix(in lab,red,red)){.bg-yellow-500\/10{background-color:color-mix(in oklab,var(--color-yellow-500) 10%,transparent)}}.bg-yellow-600\/40{background-color:#cd890066}@supports (color:color-mix(in lab,red,red)){.bg-yellow-600\/40{background-color:color-mix(in oklab,var(--color-yellow-600) 40%,transparent)}}.bg-yellow-700\/50{background-color:#a3610080}@supports (color:color-mix(in lab,red,red)){.bg-yellow-700\/50{background-color:color-mix(in oklab,var(--color-yellow-700) 50%,transparent)}}.bg-yellow-900\/40{background-color:#733e0a66}@supports (color:color-mix(in lab,red,red)){.bg-yellow-900\/40{background-color:color-mix(in oklab,var(--color-yellow-900) 40%,transparent)}}.bg-cover{background-size:cover}.bg-center{background-position:50%}.p-0{padding:calc(var(--spacing) * 0)}.p-1{padding:calc(var(--spacing) * 1)}.p-2{padding:calc(var(--spacing) * 2)}.p-3{padding:calc(var(--spacing) * 3)}.p-4{padding:calc(var(--spacing) * 4)}.p-6{padding:calc(var(--spacing) * 6)}.p-8{padding:calc(var(--spacing) * 8)}.px-1{padding-inline:calc(var(--spacing) * 1)}.px-1\.5{padding-inline:calc(var(--spacing) * 1.5)}.px-2{padding-inline:calc(var(--spacing) * 2)}.px-3{padding-inline:calc(var(--spacing) * 3)}.px-4{padding-inline:calc(var(--spacing) * 4)}.px-6{padding-inline:calc(var(--spacing) * 6)}.py-0\.5{padding-block:calc(var(--spacing) * .5)}.py-1{padding-block:calc(var(--spacing) * 1)}.py-1\.5{padding-block:calc(var(--spacing) * 1.5)}.py-2{padding-block:calc(var(--spacing) * 2)}.py-3{padding-block:calc(var(--spacing) * 3)}.py-6{padding-block:calc(var(--spacing) * 6)}.pt-2{padding-top:calc(var(--spacing) * 2)}.pr-1{padding-right:calc(var(--spacing) * 1)}.pr-2{padding-right:calc(var(--spacing) * 2)}.pr-4{padding-right:calc(var(--spacing) * 4)}.pb-2{padding-bottom:calc(var(--spacing) * 2)}.pl-2{padding-left:calc(var(--spacing) * 2)}.pl-3{padding-left:calc(var(--spacing) * 3)}.pl-4{padding-left:calc(var(--spacing) * 4)}.pl-6{padding-left:calc(var(--spacing) * 6)}.pl-10{padding-left:calc(var(--spacing) * 10)}.text-center{text-align:center}.text-left{text-align:left}.font-mono{font-family:var(--font-mono)}.text-base{font-size:var(--text-base);line-height:var(--tw-leading,var(--text-base--line-height))}.text-lg{font-size:var(--text-lg);line-height:var(--tw-leading,var(--text-lg--line-height))}.text-sm{font-size:var(--text-sm);line-height:var(--tw-leading,var(--text-sm--line-height))}.text-xl{font-size:var(--text-xl);line-height:var(--tw-leading,var(--text-xl--line-height))}.text-xs{font-size:var(--text-xs);line-height:var(--tw-leading,var(--text-xs--line-height))}.text-\[10px\]{font-size:10px}.text-\[11px\]{font-size:11px}.leading-none{--tw-leading:1;line-height:1}.leading-relaxed{--tw-leading:var(--leading-relaxed);line-height:var(--leading-relaxed)}.leading-snug{--tw-leading:var(--leading-snug);line-height:var(--leading-snug)}.font-bold{--tw-font-weight:var(--font-weight-bold);font-weight:var(--font-weight-bold)}.font-medium{--tw-font-weight:var(--font-weight-medium);font-weight:var(--font-weight-medium)}.font-semibold{--tw-font-weight:var(--font-weight-semibold);font-weight:var(--font-weight-semibold)}.tracking-widest{--tw-tracking:var(--tracking-widest);letter-spacing:var(--tracking-widest)}.whitespace-nowrap{white-space:nowrap}.whitespace-pre-wrap{white-space:pre-wrap}.text-\[\#1f160d\]{color:#1f160d}.text-\[\#2b4a22\]{color:#2b4a22}.text-\[\#2b2116\]{color:#2b2116}.text-\[\#4b3520\]{color:#4b3520}.text-\[\#6a431f\]{color:#6a431f}.text-\[\#8c1d1d\]{color:#8c1d1d}.text-amber-700{color:var(--color-amber-700)}.text-amber-800{color:var(--color-amber-800)}.text-amber-900{color:var(--color-amber-900)}.text-amber-950{color:var(--color-amber-950)}.text-black{color:var(--color-black)}.text-black\/50{color:#00000080}@supports (color:color-mix(in lab,red,red)){.text-black\/50{color:color-mix(in oklab,var(--color-black) 50%,transparent)}}.text-black\/55{color:#0000008c}@supports (color:color-mix(in lab,red,red)){.text-black\/55{color:color-mix(in oklab,var(--color-black) 55%,transparent)}}.text-black\/60{color:#0009}@supports (color:color-mix(in lab,red,red)){.text-black\/60{color:color-mix(in oklab,var(--color-black) 60%,transparent)}}.text-black\/65{color:#000000a6}@supports (color:color-mix(in lab,red,red)){.text-black\/65{color:color-mix(in oklab,var(--color-black) 65%,transparent)}}.text-black\/70{color:#000000b3}@supports (color:color-mix(in lab,red,red)){.text-black\/70{color:color-mix(in oklab,var(--color-black) 70%,transparent)}}.text-blue-600{color:var(--color-blue-600)}.text-card-foreground{color:var(--card-foreground)}.text-emerald-950{color:var(--color-emerald-950)}.text-foreground{color:var(--foreground)}.text-gray-300{color:var(--color-gray-300)}.text-gray-400{color:var(--color-gray-400)}.text-gray-500{color:var(--color-gray-500)}.text-gray-600{color:var(--color-gray-600)}.text-gray-700{color:var(--color-gray-700)}.text-gray-800{color:var(--color-gray-800)}.text-green-500{color:var(--color-green-500)}.text-green-600{color:var(--color-green-600)}.text-green-700{color:var(--color-green-700)}.text-green-800{color:var(--color-green-800)}.text-muted-foreground{color:var(--muted-foreground)}.text-orange-700{color:var(--color-orange-700)}.text-popover-foreground{color:var(--popover-foreground)}.text-primary{color:var(--primary)}.text-primary-foreground{color:var(--primary-foreground)}.text-red-500{color:var(--color-red-500)}.text-red-600{color:var(--color-red-600)}.text-red-800{color:var(--color-red-800)}.text-secondary-foreground{color:var(--secondary-foreground)}.text-sky-950{color:var(--color-sky-950)}.text-white{color:var(--color-white)}.capitalize{text-transform:capitalize}.uppercase{text-transform:uppercase}.italic{font-style:italic}.underline-offset-4{text-underline-offset:4px}.opacity-0{opacity:0}.opacity-30{opacity:.3}.opacity-45{opacity:.45}.opacity-50{opacity:.5}.opacity-60{opacity:.6}.opacity-70{opacity:.7}.opacity-80{opacity:.8}.opacity-100{opacity:1}.shadow{--tw-shadow:0 1px 3px 0 var(--tw-shadow-color,#0000001a), 0 1px 2px -1px var(--tw-shadow-color,#0000001a);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.shadow-inner{--tw-shadow:inset 0 2px 4px 0 var(--tw-shadow-color,#0000000d);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.shadow-lg{--tw-shadow:0 10px 15px -3px var(--tw-shadow-color,#0000001a), 0 4px 6px -4px var(--tw-shadow-color,#0000001a);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.shadow-md{--tw-shadow:0 4px 6px -1px var(--tw-shadow-color,#0000001a), 0 2px 4px -2px var(--tw-shadow-color,#0000001a);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.shadow-sm{--tw-shadow:0 1px 3px 0 var(--tw-shadow-color,#0000001a), 0 1px 2px -1px var(--tw-shadow-color,#0000001a);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.shadow-xs{--tw-shadow:0 1px 2px 0 var(--tw-shadow-color,#0000000d);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.ring-0{--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(0px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.ring-offset-background{--tw-ring-offset-color:var(--background)}.outline{outline-style:var(--tw-outline-style);outline-width:1px}.blur{--tw-blur:blur(8px);filter:var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)}.grayscale{--tw-grayscale:grayscale(100%);filter:var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)}.filter{filter:var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)}.backdrop-blur-sm{--tw-backdrop-blur:blur(var(--blur-sm));-webkit-backdrop-filter:var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,);backdrop-filter:var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)}.transition{transition-property:color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}.transition-\[color\,box-shadow\]{transition-property:color,box-shadow;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}.transition-all{transition-property:all;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}.transition-colors{transition-property:color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}.transition-opacity{transition-property:opacity;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}.transition-transform{transition-property:transform,translate,scale,rotate;transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))}.duration-200{--tw-duration:.2s;transition-duration:.2s}.duration-500{--tw-duration:.5s;transition-duration:.5s}.outline-none{--tw-outline-style:none;outline-style:none}.select-none{-webkit-user-select:none;user-select:none}.paused{animation-play-state:paused}.group-data-\[disabled\=true\]\:pointer-events-none:is(:where(.group)[data-disabled=true] *){pointer-events:none}.group-data-\[disabled\=true\]\:opacity-50:is(:where(.group)[data-disabled=true] *){opacity:.5}.peer-disabled\:cursor-not-allowed:is(:where(.peer):disabled~*){cursor:not-allowed}.peer-disabled\:opacity-50:is(:where(.peer):disabled~*){opacity:.5}.selection\:bg-primary ::selection{background-color:var(--primary)}.selection\:bg-primary::selection{background-color:var(--primary)}.selection\:text-primary-foreground ::selection{color:var(--primary-foreground)}.selection\:text-primary-foreground::selection{color:var(--primary-foreground)}.file\:inline-flex::file-selector-button{display:inline-flex}.file\:h-7::file-selector-button{height:calc(var(--spacing) * 7)}.file\:border-0::file-selector-button{border-style:var(--tw-border-style);border-width:0}.file\:bg-transparent::file-selector-button{background-color:#0000}.file\:text-sm::file-selector-button{font-size:var(--text-sm);line-height:var(--tw-leading,var(--text-sm--line-height))}.file\:font-medium::file-selector-button{--tw-font-weight:var(--font-weight-medium);font-weight:var(--font-weight-medium)}.file\:text-foreground::file-selector-button{color:var(--foreground)}.placeholder\:text-muted-foreground::placeholder{color:var(--muted-foreground)}.open\:bg-\[\#fff0c9\]:is([open],:popover-open,:open){background-color:#fff0c9}@media (hover:hover){.hover\:border-white\/50:hover{border-color:#ffffff80}@supports (color:color-mix(in lab,red,red)){.hover\:border-white\/50:hover{border-color:color-mix(in oklab,var(--color-white) 50%,transparent)}}.hover\:border-yellow-300:hover{border-color:var(--color-yellow-300)}.hover\:bg-\[\#b64d3d\]:hover{background-color:#b64d3d}.hover\:bg-\[\#cbe4a8\]:hover{background-color:#cbe4a8}.hover\:bg-\[\#d8b873\]:hover{background-color:#d8b873}.hover\:bg-accent:hover{background-color:var(--accent)}.hover\:bg-black\/5:hover{background-color:#0000000d}@supports (color:color-mix(in lab,red,red)){.hover\:bg-black\/5:hover{background-color:color-mix(in oklab,var(--color-black) 5%,transparent)}}.hover\:bg-black\/40:hover{background-color:#0006}@supports (color:color-mix(in lab,red,red)){.hover\:bg-black\/40:hover{background-color:color-mix(in oklab,var(--color-black) 40%,transparent)}}.hover\:bg-blue-600:hover{background-color:var(--color-blue-600)}.hover\:bg-destructive\/90:hover{background-color:var(--destructive)}@supports (color:color-mix(in lab,red,red)){.hover\:bg-destructive\/90:hover{background-color:color-mix(in oklab,var(--destructive) 90%,transparent)}}.hover\:bg-primary\/90:hover{background-color:var(--primary)}@supports (color:color-mix(in lab,red,red)){.hover\:bg-primary\/90:hover{background-color:color-mix(in oklab,var(--primary) 90%,transparent)}}.hover\:bg-red-100:hover{background-color:var(--color-red-100)}.hover\:bg-red-800:hover{background-color:var(--color-red-800)}.hover\:bg-secondary\/80:hover{background-color:var(--secondary)}@supports (color:color-mix(in lab,red,red)){.hover\:bg-secondary\/80:hover{background-color:color-mix(in oklab,var(--secondary) 80%,transparent)}}.hover\:bg-white\/55:hover{background-color:#ffffff8c}@supports (color:color-mix(in lab,red,red)){.hover\:bg-white\/55:hover{background-color:color-mix(in oklab,var(--color-white) 55%,transparent)}}.hover\:text-accent-foreground:hover{color:var(--accent-foreground)}.hover\:text-red-800:hover{color:var(--color-red-800)}.hover\:text-red-900:hover{color:var(--color-red-900)}.hover\:underline:hover{text-decoration-line:underline}.hover\:opacity-100:hover{opacity:1}}.focus\:border-blue-400:focus{border-color:var(--color-blue-400)}.focus\:border-yellow-400:focus{border-color:var(--color-yellow-400)}.focus\:ring-2:focus{--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.focus\:ring-blue-400:focus{--tw-ring-color:var(--color-blue-400)}.focus\:ring-ring:focus{--tw-ring-color:var(--ring)}.focus\:ring-yellow-400:focus{--tw-ring-color:var(--color-yellow-400)}.focus\:ring-offset-2:focus{--tw-ring-offset-width:2px;--tw-ring-offset-shadow:var(--tw-ring-inset,) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color)}.focus\:outline-hidden:focus{--tw-outline-style:none;outline-style:none}@media (forced-colors:active){.focus\:outline-hidden:focus{outline-offset:2px;outline:2px solid #0000}}.focus-visible\:border-ring:focus-visible{border-color:var(--ring)}.focus-visible\:ring-\[3px\]:focus-visible{--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)}.focus-visible\:ring-destructive\/20:focus-visible{--tw-ring-color:var(--destructive)}@supports (color:color-mix(in lab,red,red)){.focus-visible\:ring-destructive\/20:focus-visible{--tw-ring-color:color-mix(in oklab, var(--destructive) 20%, transparent)}}.focus-visible\:ring-ring\/50:focus-visible{--tw-ring-color:var(--ring)}@supports (color:color-mix(in lab,red,red)){.focus-visible\:ring-ring\/50:focus-visible{--tw-ring-color:color-mix(in oklab, var(--ring) 50%, transparent)}}@media (hover:hover){.enabled\:hover\:bg-white\/70:enabled:hover{background-color:#ffffffb3}@supports (color:color-mix(in lab,red,red)){.enabled\:hover\:bg-white\/70:enabled:hover{background-color:color-mix(in oklab,var(--color-white) 70%,transparent)}}}.disabled\:pointer-events-none:disabled{pointer-events:none}.disabled\:cursor-not-allowed:disabled{cursor:not-allowed}.disabled\:border-gray-400:disabled{border-color:var(--color-gray-400)}.disabled\:bg-gray-300:disabled{background-color:var(--color-gray-300)}.disabled\:text-gray-500:disabled{color:var(--color-gray-500)}.disabled\:opacity-30:disabled{opacity:.3}.disabled\:opacity-40:disabled{opacity:.4}.disabled\:opacity-50:disabled{opacity:.5}.has-data-\[slot\=card-action\]\:grid-cols-\[1fr_auto\]:has([data-slot=card-action]){grid-template-columns:1fr auto}.has-\[\>svg\]\:px-2\.5:has(>svg){padding-inline:calc(var(--spacing) * 2.5)}.has-\[\>svg\]\:px-3:has(>svg){padding-inline:calc(var(--spacing) * 3)}.has-\[\>svg\]\:px-4:has(>svg){padding-inline:calc(var(--spacing) * 4)}.aria-invalid\:border-destructive[aria-invalid=true]{border-color:var(--destructive)}.aria-invalid\:ring-destructive\/20[aria-invalid=true]{--tw-ring-color:var(--destructive)}@supports (color:color-mix(in lab,red,red)){.aria-invalid\:ring-destructive\/20[aria-invalid=true]{--tw-ring-color:color-mix(in oklab, var(--destructive) 20%, transparent)}}.data-\[disabled\=true\]\:pointer-events-none[data-disabled=true]{pointer-events:none}.data-\[disabled\=true\]\:opacity-50[data-disabled=true]{opacity:.5}.data-\[selected\=true\]\:bg-accent[data-selected=true]{background-color:var(--accent)}.data-\[selected\=true\]\:text-accent-foreground[data-selected=true]{color:var(--accent-foreground)}.data-\[side\=bottom\]\:slide-in-from-top-2[data-side=bottom]{--tw-enter-translate-y:calc(var(--spacing) * 2*-1)}.data-\[side\=left\]\:slide-in-from-right-2[data-side=left]{--tw-enter-translate-x:calc(var(--spacing) * 2)}.data-\[side\=right\]\:slide-in-from-left-2[data-side=right]{--tw-enter-translate-x:calc(var(--spacing) * 2*-1)}.data-\[side\=top\]\:slide-in-from-bottom-2[data-side=top]{--tw-enter-translate-y:calc(var(--spacing) * 2)}.data-\[state\=checked\]\:translate-x-\[calc\(100\%-2px\)\][data-state=checked]{--tw-translate-x: calc(100% - 2px) ;translate:var(--tw-translate-x) var(--tw-translate-y)}.data-\[state\=checked\]\:bg-primary[data-state=checked]{background-color:var(--primary)}.data-\[state\=closed\]\:animate-out[data-state=closed]{animation:exit var(--tw-animation-duration,var(--tw-duration,.15s))var(--tw-ease,ease)var(--tw-animation-delay,0s)var(--tw-animation-iteration-count,1)var(--tw-animation-direction,normal)var(--tw-animation-fill-mode,none)}.data-\[state\=closed\]\:fade-out-0[data-state=closed]{--tw-exit-opacity:0}.data-\[state\=closed\]\:zoom-out-95[data-state=closed]{--tw-exit-scale:.95}.data-\[state\=open\]\:animate-in[data-state=open]{animation:enter var(--tw-animation-duration,var(--tw-duration,.15s))var(--tw-ease,ease)var(--tw-animation-delay,0s)var(--tw-animation-iteration-count,1)var(--tw-animation-direction,normal)var(--tw-animation-fill-mode,none)}.data-\[state\=open\]\:bg-accent[data-state=open]{background-color:var(--accent)}.data-\[state\=open\]\:text-muted-foreground[data-state=open]{color:var(--muted-foreground)}.data-\[state\=open\]\:fade-in-0[data-state=open]{--tw-enter-opacity:0}.data-\[state\=open\]\:zoom-in-95[data-state=open]{--tw-enter-scale:.95}.data-\[state\=unchecked\]\:translate-x-0[data-state=unchecked]{--tw-translate-x:calc(var(--spacing) * 0);translate:var(--tw-translate-x) var(--tw-translate-y)}.data-\[state\=unchecked\]\:bg-input[data-state=unchecked]{background-color:var(--input)}@media (min-width:40rem){.sm\:max-w-lg{max-width:var(--container-lg)}.sm\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.sm\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}.sm\:flex-row{flex-direction:row}.sm\:justify-end{justify-content:flex-end}.sm\:text-left{text-align:left}}@media (min-width:48rem){.md\:text-sm{font-size:var(--text-sm);line-height:var(--tw-leading,var(--text-sm--line-height))}}@media (min-width:64rem){.lg\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}}@media (min-width:80rem){.xl\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.xl\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}}.dark\:border-input:is(.dark *){border-color:var(--input)}.dark\:bg-destructive\/60:is(.dark *){background-color:var(--destructive)}@supports (color:color-mix(in lab,red,red)){.dark\:bg-destructive\/60:is(.dark *){background-color:color-mix(in oklab,var(--destructive) 60%,transparent)}}.dark\:bg-input\/30:is(.dark *){background-color:var(--input)}@supports (color:color-mix(in lab,red,red)){.dark\:bg-input\/30:is(.dark *){background-color:color-mix(in oklab,var(--input) 30%,transparent)}}@media (hover:hover){.dark\:hover\:bg-accent\/50:is(.dark *):hover{background-color:var(--accent)}@supports (color:color-mix(in lab,red,red)){.dark\:hover\:bg-accent\/50:is(.dark *):hover{background-color:color-mix(in oklab,var(--accent) 50%,transparent)}}.dark\:hover\:bg-input\/50:is(.dark *):hover{background-color:var(--input)}@supports (color:color-mix(in lab,red,red)){.dark\:hover\:bg-input\/50:is(.dark *):hover{background-color:color-mix(in oklab,var(--input) 50%,transparent)}}}.dark\:focus-visible\:ring-destructive\/40:is(.dark *):focus-visible{--tw-ring-color:var(--destructive)}@supports (color:color-mix(in lab,red,red)){.dark\:focus-visible\:ring-destructive\/40:is(.dark *):focus-visible{--tw-ring-color:color-mix(in oklab, var(--destructive) 40%, transparent)}}.dark\:aria-invalid\:ring-destructive\/40:is(.dark *)[aria-invalid=true]{--tw-ring-color:var(--destructive)}@supports (color:color-mix(in lab,red,red)){.dark\:aria-invalid\:ring-destructive\/40:is(.dark *)[aria-invalid=true]{--tw-ring-color:color-mix(in oklab, var(--destructive) 40%, transparent)}}.dark\:data-\[state\=checked\]\:bg-primary-foreground:is(.dark *)[data-state=checked]{background-color:var(--primary-foreground)}.dark\:data-\[state\=unchecked\]\:bg-foreground:is(.dark *)[data-state=unchecked]{background-color:var(--foreground)}.dark\:data-\[state\=unchecked\]\:bg-input\/80:is(.dark *)[data-state=unchecked]{background-color:var(--input)}@supports (color:color-mix(in lab,red,red)){.dark\:data-\[state\=unchecked\]\:bg-input\/80:is(.dark *)[data-state=unchecked]{background-color:color-mix(in oklab,var(--input) 80%,transparent)}}.\[\&_\[cmdk-group-heading\]\]\:px-2 [cmdk-group-heading]{padding-inline:calc(var(--spacing) * 2)}.\[\&_\[cmdk-group-heading\]\]\:py-1\.5 [cmdk-group-heading]{padding-block:calc(var(--spacing) * 1.5)}.\[\&_\[cmdk-group-heading\]\]\:text-xs [cmdk-group-heading]{font-size:var(--text-xs);line-height:var(--tw-leading,var(--text-xs--line-height))}.\[\&_\[cmdk-group-heading\]\]\:font-medium [cmdk-group-heading]{--tw-font-weight:var(--font-weight-medium);font-weight:var(--font-weight-medium)}.\[\&_\[cmdk-group-heading\]\]\:text-muted-foreground [cmdk-group-heading]{color:var(--muted-foreground)}.\[\&_\[cmdk-group\]\]\:px-2 [cmdk-group]{padding-inline:calc(var(--spacing) * 2)}.\[\&_\[cmdk-group\]\:not\(\[hidden\]\)_\~\[cmdk-group\]\]\:pt-0 [cmdk-group]:not([hidden])~[cmdk-group]{padding-top:calc(var(--spacing) * 0)}.\[\&_\[cmdk-input-wrapper\]_svg\]\:h-5 [cmdk-input-wrapper] svg{height:calc(var(--spacing) * 5)}.\[\&_\[cmdk-input-wrapper\]_svg\]\:w-5 [cmdk-input-wrapper] svg{width:calc(var(--spacing) * 5)}.\[\&_\[cmdk-input\]\]\:h-12 [cmdk-input]{height:calc(var(--spacing) * 12)}.\[\&_\[cmdk-item\]\]\:px-2 [cmdk-item]{padding-inline:calc(var(--spacing) * 2)}.\[\&_\[cmdk-item\]\]\:py-3 [cmdk-item]{padding-block:calc(var(--spacing) * 3)}.\[\&_\[cmdk-item\]_svg\]\:h-5 [cmdk-item] svg{height:calc(var(--spacing) * 5)}.\[\&_\[cmdk-item\]_svg\]\:w-5 [cmdk-item] svg{width:calc(var(--spacing) * 5)}.\[\&_\[data-slot\=command-input-wrapper\]\]\:h-12 [data-slot=command-input-wrapper]{height:calc(var(--spacing) * 12)}.\[\&_svg\]\:pointer-events-none svg{pointer-events:none}.\[\&_svg\]\:shrink-0 svg{flex-shrink:0}.\[\&_svg\:not\(\[class\*\=\'size-\'\]\)\]\:size-4 svg:not([class*=size-]){width:calc(var(--spacing) * 4);height:calc(var(--spacing) * 4)}.\[\&_svg\:not\(\[class\*\=\'text-\'\]\)\]\:text-muted-foreground svg:not([class*=text-]){color:var(--muted-foreground)}.\[\.border-b\]\:pb-6.border-b{padding-bottom:calc(var(--spacing) * 6)}.\[\.border-t\]\:pt-6.border-t{padding-top:calc(var(--spacing) * 6)}}@property --tw-animation-delay{syntax:"*";inherits:false;initial-value:0s}@property --tw-animation-direction{syntax:"*";inherits:false;initial-value:normal}@property --tw-animation-duration{syntax:"*";inherits:false}@property --tw-animation-fill-mode{syntax:"*";inherits:false;initial-value:none}@property --tw-animation-iteration-count{syntax:"*";inherits:false;initial-value:1}@property --tw-enter-blur{syntax:"*";inherits:false;initial-value:0}@property --tw-enter-opacity{syntax:"*";inherits:false;initial-value:1}@property --tw-enter-rotate{syntax:"*";inherits:false;initial-value:0}@property --tw-enter-scale{syntax:"*";inherits:false;initial-value:1}@property --tw-enter-translate-x{syntax:"*";inherits:false;initial-value:0}@property --tw-enter-translate-y{syntax:"*";inherits:false;initial-value:0}@property --tw-exit-blur{syntax:"*";inherits:false;initial-value:0}@property --tw-exit-opacity{syntax:"*";inherits:false;initial-value:1}@property --tw-exit-rotate{syntax:"*";inherits:false;initial-value:0}@property --tw-exit-scale{syntax:"*";inherits:false;initial-value:1}@property --tw-exit-translate-x{syntax:"*";inherits:false;initial-value:0}@property --tw-exit-translate-y{syntax:"*";inherits:false;initial-value:0}:root{--radius:.65rem;--background:oklch(100% 0 0);--foreground:oklch(14.1% .005 285.823);--card:oklch(100% 0 0);--card-foreground:oklch(14.1% .005 285.823);--popover:oklch(100% 0 0);--popover-foreground:oklch(14.1% .005 285.823);--primary:oklch(72.3% .219 149.579);--primary-foreground:oklch(98.2% .018 155.826);--secondary:oklch(96.7% .001 286.375);--secondary-foreground:oklch(21% .006 285.885);--muted:oklch(96.7% .001 286.375);--muted-foreground:oklch(55.2% .016 285.938);--accent:oklch(96.7% .001 286.375);--accent-foreground:oklch(21% .006 285.885);--destructive:oklch(57.7% .245 27.325);--border:oklch(92% .004 286.32);--input:oklch(92% .004 286.32);--ring:oklch(72.3% .219 149.579);--chart-1:oklch(64.6% .222 41.116);--chart-2:oklch(60% .118 184.704);--chart-3:oklch(39.8% .07 227.392);--chart-4:oklch(82.8% .189 84.429);--chart-5:oklch(76.9% .188 70.08);--sidebar:oklch(98.5% 0 0);--sidebar-foreground:oklch(14.1% .005 285.823);--sidebar-primary:oklch(72.3% .219 149.579);--sidebar-primary-foreground:oklch(98.2% .018 155.826);--sidebar-accent:oklch(96.7% .001 286.375);--sidebar-accent-foreground:oklch(21% .006 285.885);--sidebar-border:oklch(92% .004 286.32);--sidebar-ring:oklch(72.3% .219 149.579)}.dark{--background:oklch(14.1% .005 285.823);--foreground:oklch(98.5% 0 0);--card:oklch(21% .006 285.885);--card-foreground:oklch(98.5% 0 0);--popover:oklch(21% .006 285.885);--popover-foreground:oklch(98.5% 0 0);--primary:oklch(69.6% .17 162.48);--primary-foreground:oklch(39.3% .095 152.535);--secondary:oklch(27.4% .006 286.033);--secondary-foreground:oklch(98.5% 0 0);--muted:oklch(27.4% .006 286.033);--muted-foreground:oklch(70.5% .015 286.067);--accent:oklch(27.4% .006 286.033);--accent-foreground:oklch(98.5% 0 0);--destructive:oklch(70.4% .191 22.216);--border:oklch(100% 0 0/.1);--input:oklch(100% 0 0/.15);--ring:oklch(52.7% .154 150.069);--chart-1:oklch(48.8% .243 264.376);--chart-2:oklch(69.6% .17 162.48);--chart-3:oklch(76.9% .188 70.08);--chart-4:oklch(62.7% .265 303.9);--chart-5:oklch(64.5% .246 16.439);--sidebar:oklch(21% .006 285.885);--sidebar-foreground:oklch(98.5% 0 0);--sidebar-primary:oklch(69.6% .17 162.48);--sidebar-primary-foreground:oklch(39.3% .095 152.535);--sidebar-accent:oklch(27.4% .006 286.033);--sidebar-accent-foreground:oklch(98.5% 0 0);--sidebar-border:oklch(100% 0 0/.1);--sidebar-ring:oklch(52.7% .154 150.069)}.ga_action_box{background:url(https://gpzz.innogamescdn.com/images/game/academy/tech_frame.png) no-repeat;width:58px;height:59px;position:relative}.ga_action_icon{margin:4px;position:absolute;top:0;left:0}.ga_action_building{background-size:50px 50px;width:50px;height:50px}@property --tw-translate-x{syntax:"*";inherits:false;initial-value:0}@property --tw-translate-y{syntax:"*";inherits:false;initial-value:0}@property --tw-translate-z{syntax:"*";inherits:false;initial-value:0}@property --tw-rotate-x{syntax:"*";inherits:false}@property --tw-rotate-y{syntax:"*";inherits:false}@property --tw-rotate-z{syntax:"*";inherits:false}@property --tw-skew-x{syntax:"*";inherits:false}@property --tw-skew-y{syntax:"*";inherits:false}@property --tw-space-y-reverse{syntax:"*";inherits:false;initial-value:0}@property --tw-space-x-reverse{syntax:"*";inherits:false;initial-value:0}@property --tw-border-style{syntax:"*";inherits:false;initial-value:solid}@property --tw-leading{syntax:"*";inherits:false}@property --tw-font-weight{syntax:"*";inherits:false}@property --tw-tracking{syntax:"*";inherits:false}@property --tw-shadow{syntax:"*";inherits:false;initial-value:0 0 #0000}@property --tw-shadow-color{syntax:"*";inherits:false}@property --tw-shadow-alpha{syntax:"<percentage>";inherits:false;initial-value:100%}@property --tw-inset-shadow{syntax:"*";inherits:false;initial-value:0 0 #0000}@property --tw-inset-shadow-color{syntax:"*";inherits:false}@property --tw-inset-shadow-alpha{syntax:"<percentage>";inherits:false;initial-value:100%}@property --tw-ring-color{syntax:"*";inherits:false}@property --tw-ring-shadow{syntax:"*";inherits:false;initial-value:0 0 #0000}@property --tw-inset-ring-color{syntax:"*";inherits:false}@property --tw-inset-ring-shadow{syntax:"*";inherits:false;initial-value:0 0 #0000}@property --tw-ring-inset{syntax:"*";inherits:false}@property --tw-ring-offset-width{syntax:"<length>";inherits:false;initial-value:0}@property --tw-ring-offset-color{syntax:"*";inherits:false;initial-value:#fff}@property --tw-ring-offset-shadow{syntax:"*";inherits:false;initial-value:0 0 #0000}@property --tw-outline-style{syntax:"*";inherits:false;initial-value:solid}@property --tw-blur{syntax:"*";inherits:false}@property --tw-brightness{syntax:"*";inherits:false}@property --tw-contrast{syntax:"*";inherits:false}@property --tw-grayscale{syntax:"*";inherits:false}@property --tw-hue-rotate{syntax:"*";inherits:false}@property --tw-invert{syntax:"*";inherits:false}@property --tw-opacity{syntax:"*";inherits:false}@property --tw-saturate{syntax:"*";inherits:false}@property --tw-sepia{syntax:"*";inherits:false}@property --tw-drop-shadow{syntax:"*";inherits:false}@property --tw-drop-shadow-color{syntax:"*";inherits:false}@property --tw-drop-shadow-alpha{syntax:"<percentage>";inherits:false;initial-value:100%}@property --tw-drop-shadow-size{syntax:"*";inherits:false}@property --tw-backdrop-blur{syntax:"*";inherits:false}@property --tw-backdrop-brightness{syntax:"*";inherits:false}@property --tw-backdrop-contrast{syntax:"*";inherits:false}@property --tw-backdrop-grayscale{syntax:"*";inherits:false}@property --tw-backdrop-hue-rotate{syntax:"*";inherits:false}@property --tw-backdrop-invert{syntax:"*";inherits:false}@property --tw-backdrop-opacity{syntax:"*";inherits:false}@property --tw-backdrop-saturate{syntax:"*";inherits:false}@property --tw-backdrop-sepia{syntax:"*";inherits:false}@property --tw-duration{syntax:"*";inherits:false}@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{50%{opacity:.5}}@keyframes enter{0%{opacity:var(--tw-enter-opacity,1);transform:translate3d(var(--tw-enter-translate-x,0),var(--tw-enter-translate-y,0),0)scale3d(var(--tw-enter-scale,1),var(--tw-enter-scale,1),var(--tw-enter-scale,1))rotate(var(--tw-enter-rotate,0));filter:blur(var(--tw-enter-blur,0))}}@keyframes exit{to{opacity:var(--tw-exit-opacity,1);transform:translate3d(var(--tw-exit-translate-x,0),var(--tw-exit-translate-y,0),0)scale3d(var(--tw-exit-scale,1),var(--tw-exit-scale,1),var(--tw-exit-scale,1))rotate(var(--tw-exit-rotate,0));filter:blur(var(--tw-exit-blur,0))}}
 
-module.render = function(container) {
-    container.innerHTML = `
-        <div class="main-control inactive" id="build-control">
-            <div class="control-info">
-                <div class="control-label">Auto Build</div>
-                <div class="control-status" id="build-status">En attente</div>
-            </div>
-            <label class="toggle-switch">
-                <input type="checkbox" id="toggle-build">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-
-        <div class="bot-section">
-            <div class="section-header">
-                <div class="section-title"><span>⚡</span> Auto Gratis</div>
-                <span class="section-toggle">▼</span>
-            </div>
-            <div class="section-content">
-                <div class="main-control inactive" id="gratis-control" style="margin-bottom: 15px;">
-                    <div class="control-info">
-                        <div class="control-label">Construction Instantanée Gratuite</div>
-                        <div class="control-status" id="gratis-status">Inactif</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="toggle-gratis">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                <div style="padding: 12px; background: rgba(0,0,0,0.2); border-radius: 6px; font-size: 11px; color: #BDB76B;">
-                    <strong>ℹ️ Fonctionnement:</strong><br>
-                    • Clique automatiquement sur le bouton "Gratis" toutes les 2.5 secondes<br>
-                    • Termine instantanément les constructions de moins de 5 minutes<br>
-                    • Fonctionne uniquement quand le bouton est disponible<br>
-                    • Gratuit et sans limite d'utilisation
-                </div>
-            </div>
-        </div>
-
-        <div class="bot-section">
-            <div class="section-header">
-                <div class="section-title"><span>🏛️</span> Templates de construction</div>
-                <span class="section-toggle">▼</span>
-            </div>
-            <div class="section-content">
-                <div style="font-size: 11px; color: #BDB76B; margin-bottom: 10px;">
-                    Choisissez les niveaux voulus pour chaque batiment, enregistrez le plan comme template, puis appliquez-le a n'importe quelle ville : la file sera remplie automatiquement avec tous les prerequis necessaires.
-                </div>
-
-                <div id="tpl-normal-grid" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; padding:10px; background:rgba(0,0,0,0.2); border-radius:6px;">
-                    ${NORMAL_BUILDINGS.map(renderNormalBuildingCell).join('')}
-                </div>
-
-                <div style="display:flex; gap:10px; margin-bottom:12px;">
-                    <div style="flex:1; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">
-                        <div style="font-size:10px;color:#D4AF37;text-align:center;margin-bottom:8px;font-family:Cinzel,serif;">Speciaux — Emplacement Gauche</div>
-                        <div id="tpl-special-left" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">${SPECIAL_LEFT.map(renderSpecialCell).join('')}</div>
-                    </div>
-                    <div style="flex:1; padding:8px; background:rgba(0,0,0,0.2); border-radius:6px;">
-                        <div style="font-size:10px;color:#D4AF37;text-align:center;margin-bottom:8px;font-family:Cinzel,serif;">Speciaux — Emplacement Droite</div>
-                        <div id="tpl-special-right" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;">${SPECIAL_RIGHT.map(renderSpecialCell).join('')}</div>
-                    </div>
-                </div>
-
-                <div style="padding:8px;margin-bottom:12px;background:rgba(0,0,0,0.2);border-radius:6px;border:1px solid rgba(212,175,55,0.2);">
-                    <div style="font-size:10px;color:#D4AF37;text-align:center;margin-bottom:8px;font-family:Cinzel,serif;">Recherches — Académie</div>
-                    <div id="tpl-research-grid" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-height:230px;overflow-y:auto;">
-                        ${getResearchIdsSorted().map(renderResearchCell).join('')}
-                    </div>
-                </div>
-
-                <div id="tpl-prereq-preview" style="padding:8px;margin-bottom:12px;background:linear-gradient(180deg,rgba(212,175,55,0.08),rgba(0,0,0,0.22));border:1px solid rgba(212,175,55,0.35);border-radius:6px;">
-                    <div style="font-size:10px;color:#FFD700;margin-bottom:7px;font-family:Cinzel,serif;">📋 File de construction</div>
-                    <div id="tpl-prereq-list" style="display:flex;flex-direction:column;gap:4px;max-height:210px;overflow-y:auto;"><div style="font-size:10px;color:#8B8B83;font-style:italic;">La file apparaîtra ici dans l'ordre exact d'exécution.</div></div>
-                </div>
-
-                <div style="display:flex; gap:6px; margin-bottom:8px;">
-                    <input type="text" id="tpl-name-input" placeholder="Nom du template" maxlength="40"
-                        style="flex:1; background:#1a1a14; border:1px solid #8B6914; color:#FFD700; padding:7px; border-radius:4px; font-size:12px;">
-                    <button id="tpl-save-btn"
-                        style="background:linear-gradient(145deg,#D4AF37,#8B6914); border:1px solid #FFD700; color:#1a1408; font-weight:bold; padding:7px 14px; border-radius:4px; cursor:pointer; font-size:11px; white-space:nowrap;">
-                        💾 Enregistrer
-                    </button>
-                </div>
-
-                <div style="display:flex; gap:6px; align-items:center;">
-                    <select id="tpl-select"
-                        style="flex:1; background:#1a1a14; border:1px solid #8B6914; color:#FFD700; padding:7px; border-radius:4px; font-size:12px;">
-                        <option value="">-- Choisir un template --</option>
-                    </select>
-                    <button id="tpl-apply-btn"
-                        style="background:linear-gradient(145deg,#81C784,#4a7a4a); border:1px solid #A5D6A7; color:#0d1f0d; font-weight:bold; padding:7px 12px; border-radius:4px; cursor:pointer; font-size:11px; white-space:nowrap;">
-                        ✅ Appliquer a cette ville
-                    </button>
-                    <button id="tpl-reset-btn" title="Réinitialiser le template en cours" aria-label="Réinitialiser le template en cours"
-                        style="background:linear-gradient(145deg,#64B5F6,#1E5A92); border:1px solid #90CAF9; color:#F5FAFF; font-weight:bold; width:34px; height:30px; padding:0; border-radius:4px; cursor:pointer; font-size:18px; line-height:28px; display:flex; align-items:center; justify-content:center;">
-                        ↻
-                    </button>
-                    <button id="tpl-delete-btn" title="Supprimer le template"
-                        style="background:linear-gradient(145deg,#E57373,#8B3A3A); border:1px solid #FFCDD2; color:#2a0d0d; font-weight:bold; padding:7px 10px; border-radius:4px; cursor:pointer; font-size:11px;">
-                        🗑️
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div class="bot-section">
-            <div class="section-header">
-                <div class="section-title"><span>📊</span> Statistiques</div>
-                <span class="section-toggle">▼</span>
-            </div>
-            <div class="section-content">
-                <div class="stats-grid">
-                    <div class="stat-box">
-                        <span class="stat-value" id="build-stat-built">0</span>
-                        <span class="stat-label">Construits</span>
-                    </div>
-                    <div class="stat-box">
-                        <span class="stat-value" id="build-stat-queued">0</span>
-                        <span class="stat-label">En attente</span>
-                    </div>
-                    <div class="stat-box">
-                        <span class="stat-value" id="build-stat-gratis">0</span>
-                        <span class="stat-label">Gratis utilisés</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="bot-section">
-            <div class="section-header">
-                <div class="section-title"><span>⏱️</span> Prochain Check</div>
-                <span class="section-toggle">▼</span>
-            </div>
-            <div class="section-content">
-                <div class="timer-container">
-                    <div class="timer-label">Temps restant</div>
-                    <div class="timer-value" id="build-timer">--:--</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="bot-section">
-            <div class="section-header">
-                <div class="section-title"><span>⚙️</span> Options</div>
-                <span class="section-toggle">▼</span>
-            </div>
-            <div class="section-content">
-                <div class="option-group">
-                    <span class="option-label">Intervalle de verification</span>
-                    <select class="option-select" id="build-interval">
-                        <option value="5">5 minutes</option>
-                        <option value="10">10 minutes</option>
-                        <option value="20">20 minutes</option>
-                        <option value="40">40 minutes</option>
-                    </select>
-                </div>
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:8px;background:rgba(0,0,0,0.2);border-radius:6px;">
-                    <div>
-                        <div style="font-size:11px;color:#D4AF37;">Humaniser les actions</div>
-                        <div style="font-size:9px;color:#8B8B83;max-width:280px;">Traite les villes une par une avec des délais variables avant chaque action et entre les villes.</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="toggle-humanizer">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-            </div>
-        </div>
-
-        <div class="bot-section">
-            <div class="section-header">
-                <div class="section-title"><span>📋</span> File d'attente</div>
-                <span class="section-toggle">▼</span>
-            </div>
-            <div class="section-content">
-                <div id="build-queue-display" style="min-height: 60px; display: flex; flex-wrap: wrap; gap: 6px;">
-                    <div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Senat pour ajouter des constructions</div>
-                </div>
-            </div>
-        </div>
-    `;
-};
-
-function renderNormalBuildingCell(bid) {
-    const max=getBuildingMaxLevel(bid);
-    return `<div style="width:76px;text-align:center;">
-        <div title="${getBuildingName(bid)}" style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;margin:0 auto;">
-            <div style="width:100%;height:100%;background:url(https://gpfr.innogamescdn.com/images/game/main/${bid}.png) center/cover no-repeat;"></div>
-        </div>
-        <select class="tpl-mode-select" data-bid="${bid}" title="Mode pour ${getBuildingName(bid)}" style="width:72px;background:#1a1a14;border:1px solid #6b5a32;color:#D4AF37;font-size:8px;border-radius:3px;margin-top:3px;padding:1px 0;">
-            <option value="upgrade">Améliorer</option>
-            <option value="demolish">Démolir</option>
-        </select>
-        <input type="number" class="tpl-level-input" data-bid="${bid}" min="0" max="${max}" value="0" title="${getBuildingName(bid)}"
-            style="width:48px;background:#1a1a14;border:1px solid #8B6914;color:#FFD700;text-align:center;font-size:11px;border-radius:3px;margin-top:3px;padding:2px 0;">
-    </div>`;
-}
-function renderSpecialCell(bid) {
-    return `<div class="tpl-special-cell" data-bid="${bid}" data-selected="0" title="${getBuildingName(bid)}" style="width:78px;text-align:center;cursor:pointer;user-select:none;">
-        <div class="tpl-special-icon" style="width:50px;height:50px;background:#1a1a14;border:2px solid #4a4a3a;border-radius:4px;margin:0 auto;overflow:hidden;">
-            <div style="width:100%;height:100%;background:url(https://gpfr.innogamescdn.com/images/game/main/${bid}.png) center/cover no-repeat;opacity:0.48;"></div>
-        </div>
-        <select class="tpl-mode-select" data-bid="${bid}" title="Mode pour ${getBuildingName(bid)}" style="width:72px;background:#1a1a14;border:1px solid #6b5a32;color:#D4AF37;font-size:8px;border-radius:3px;margin-top:3px;padding:1px 0;">
-            <option value="upgrade">Améliorer</option>
-            <option value="demolish">Démolir</option>
-        </select>
-        <input type="number" class="tpl-special-level-input" data-bid="${bid}" min="0" max="1" value="0" title="Niveau cible" style="width:42px;background:#1a1a14;border:1px solid #8B6914;color:#FFD700;text-align:center;font-size:10px;border-radius:3px;margin-top:3px;padding:1px 0;">
-    </div>`;
-}
-function renderResearchCell(rid) {
-    const academy=getResearchAcademyLevel(rid), name=getResearchName(rid);
-    return `<div class="tpl-research-cell" data-rid="${rid}" data-selected="0" title="${name} — Académie ${academy}" style="width:48px;height:48px;cursor:pointer;user-select:none;position:relative;opacity:0.48;border:2px solid #4a4a3a;border-radius:4px;background:#1a1a14;overflow:hidden;">
-        <div class="ga_action_icon research_icon research ${rid}" style="width:40px;height:40px;margin:2px auto 0;"></div>
-        <span style="position:absolute;right:1px;bottom:1px;background:rgba(0,0,0,0.85);color:#FFD700;font-size:8px;font-weight:bold;padding:1px 3px;border-radius:3px;">${academy}</span>
-    </div>`;
-}
-
-module.init = function() {
-    loadData();
-    
-    document.getElementById('toggle-build').checked = buildData.enabled;
-    document.getElementById('toggle-gratis').checked = buildData.gratisEnabled;
-    document.getElementById('build-interval').value = buildData.settings.interval;
-    const humanizerToggle=document.getElementById('toggle-humanizer');
-    if(humanizerToggle) humanizerToggle.checked = buildData.settings.humanizer !== false;
-    updateStats();
-    updateQueueDisplay();
-    
-    document.getElementById('toggle-build').onchange = (e) => toggleBuild(e.target.checked);
-    document.getElementById('toggle-gratis').onchange = (e) => toggleGratis(e.target.checked);
-    if(humanizerToggle) humanizerToggle.onchange = (e) => { buildData.settings.humanizer=e.target.checked; saveData(); log('BUILD', e.target.checked ? 'Humaniser activé' : 'Humaniser désactivé', 'info'); };
-    document.getElementById('build-interval').onchange = (e) => {
-        buildData.settings.interval = parseInt(e.target.value);
-        saveData();
-        log('BUILD', 'Intervalle: ' + e.target.value + ' min', 'info');
-        if (buildData.enabled) {
-            buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
-            processAllQueues();
-        }
-    };
-
-    // Les sections du Builder restent ouvertes en permanence.
-    document.querySelectorAll('#tab-build .section-header').forEach(h => {
-        h.classList.remove('collapsed');
-        const c = h.nextElementSibling;
-        if (c) c.style.display = 'block';
-        h.onclick = (e) => { e.preventDefault(); e.stopPropagation(); };
-    });
-
-    // --- Templates de construction ---
-    initSpecialToggleHandlers();
-    initResearchToggleHandlers();
-    initTemplateInputHandlers();
-    initSpecialLevelInputHandlers();
-    initTemplateModeHandlers();
-    refreshTemplateSelect();
-    refreshTemplatePrerequisites();
-    renderExecutionQueuePreview();
-    syncTemplateUIForCurrentTown(true);
-
-    document.getElementById('tpl-save-btn').onclick = saveTemplateFromUI;
-    document.getElementById('tpl-delete-btn').onclick = () => {
-        const sel = document.getElementById('tpl-select');
-        const name = sel.value;
-        if (!name) { log('BUILD', 'Selectionnez un template a supprimer', 'error'); return; }
-        delete buildData.templates[name];
-        saveData();
-        refreshTemplateSelect();
-        log('BUILD', `Template "${name}" supprime`, 'info');
-    };
-    document.getElementById('tpl-apply-btn').onclick = () => {
-        const sel = document.getElementById('tpl-select');
-        const name = sel.value;
-        if (!name) { log('BUILD', 'Selectionnez un template a appliquer', 'error'); return; }
-        applyTemplateToTown(name);
-    };
-    document.getElementById('tpl-reset-btn').onclick = resetCurrentTemplateUI;
-    document.getElementById('tpl-select').onchange = (e) => {
-        const name = e.target.value;
-        if (name && buildData.templates[name]) loadTemplateIntoUI(buildData.templates[name]);
-    };
-
-    if (!buildData.researchQueues) buildData.researchQueues = {};
-    if (!buildData.actionQueues) buildData.actionQueues = {};
-    if (!buildData.activeTemplates) buildData.activeTemplates = {};
-    if (buildData.enabled) { toggleBuild(true); }
-
-    if (buildData.gratisEnabled) {
-        toggleGratis(true);
-    }
-
-    startSenateWatcher();
-    startTimer();
-    
-    window.GU_Build = {
-        add: (bid, lvl) => addToQueue(bid, lvl),
-        remove: (idx) => removeFromQueue(idx),
-        removeAction: (idx) => removeActionFromQueue(idx)
-    };
-
-    log('BUILD', 'Module initialise', 'info');
-};
-
-module.isActive = function() {
-    return buildData.enabled || buildData.gratisEnabled;
-};
-
-module.onActivate = function(container) {
-    updateStats();
-    updateQueueDisplay();
-    syncTemplateUIForCurrentTown(true);
-    refreshTemplateSelect(buildData.activeTemplates?.[String(uw.Game?.townId)] || undefined);
-};
-
-function toggleBuild(enabled) {
-    buildData.enabled = enabled;
-    const ctrl = document.getElementById('build-control');
-    const status = document.getElementById('build-status');
-    
-    if (enabled) {
-        ctrl.classList.remove('inactive');
-        status.textContent = 'Actif';
-        log('BUILD', 'Bot demarre', 'success');
-        buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
-        processAllQueues();
-
-        // Une routine parcourt les villes une seule fois.
-        // Les villes bloquees attendent la prochaine routine du timer.
-        if (fillInterval) { clearInterval(fillInterval); fillInterval = null; }
-    } else {
-        ctrl.classList.add('inactive');
-        status.textContent = 'En attente';
-        log('BUILD', 'Bot arrete', 'info');
-        if (fillInterval) { clearInterval(fillInterval); fillInterval = null; }
-    }
-    
-    saveData();
-    if (window.GrepolisUltimate) {
-        window.GrepolisUltimate.updateButtonState();
-    }
-}
-
-function toggleGratis(enabled) {
-    buildData.gratisEnabled = enabled;
-    const ctrl = document.getElementById('gratis-control');
-    const status = document.getElementById('gratis-status');
-    
-    if (enabled) {
-        ctrl.classList.remove('inactive');
-        status.textContent = 'Actif';
-        status.style.color = '#81C784';
-        log('BUILD', 'Auto Gratis activé', 'success');
+        /* --- PONT CSS : MAPPER TES ANCIENNES CLASSES AVEC LES VARIABLES TAILWIND --- */
         
-        // Démarrer l'intervalle de vérification du bouton Gratis
-        if (gratisInterval) clearInterval(gratisInterval);
-        gratisInterval = setInterval(checkGratis, 2500);
-    } else {
-        ctrl.classList.add('inactive');
-        status.textContent = 'Inactif';
-        status.style.color = '#E57373';
-        log('BUILD', 'Auto Gratis désactivé', 'info');
+        /* Bouton principal du Bot */
+        .ultimate-bot-btn { position: fixed; bottom: 20px; left: 20px; z-index: 99999; width: 56px; height: 56px; border-radius: 50%; background-color: var(--primary); color: var(--primary-foreground); border: 2px solid var(--border); box-shadow: var(--tw-shadow-lg); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; text-align: center; line-height: 1.2; transition: transform 0.2s; }
+        .ultimate-bot-btn:hover { transform: scale(1.1); }
+        .ultimate-bot-btn.has-active::after { content: ''; position: absolute; top: -2px; right: -2px; width: 14px; height: 14px; background-color: var(--color-green-500); border-radius: 50%; border: 2px solid var(--background); animation: pulse 2s infinite; }
         
-        // Arrêter l'intervalle
-        if (gratisInterval) {
-            clearInterval(gratisInterval);
-            gratisInterval = null;
-        }
-    }
-    
-    saveData();
-    if (window.GrepolisUltimate) {
-        window.GrepolisUltimate.updateButtonState();
-    }
-}
+        /* Panneau principal */
+        .ultimate-panel { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 750px; max-height: 85vh; background-color: var(--background); color: var(--foreground); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--tw-shadow-xl); z-index: 100000; overflow: hidden; flex-direction: column; }
+        .ultimate-panel.open { display: flex; }
+        .ultimate-panel.dragging { transition: none !important; }
 
-function checkGratis() {
-    try {
-        // Chercher le bouton Gratis disponible (pas désactivé)
-        const gratisButton = uw.$('.type_building_queue.type_free').not('.disabled');
+        /* En-tête et fermeture */
+        .ultimate-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem; border-bottom: 1px solid var(--border); background-color: var(--muted); cursor: grab; user-select: none; }
+        .ultimate-title { font-weight: bold; font-size: 1.125rem; display: flex; align-items: center; gap: 0.5rem; }
+        .ultimate-version { font-size: 0.75rem; background-color: var(--background); padding: 0.25rem 0.5rem; border-radius: var(--radius-xs); border: 1px solid var(--border); }
+        .ultimate-close { width: 32px; height: 32px; border-radius: 50%; background-color: rgba(255,0,0,0.1); color: var(--destructive); border: 1px solid var(--destructive); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .ultimate-close:hover { background-color: var(--destructive); color: white; }
+
+        /* Onglets du menu */
+        .ultimate-tabs { display: flex; background-color: var(--background); border-bottom: 1px solid var(--border); overflow-x: auto; flex-shrink: 0; }
+        .ultimate-tab { flex: 1; min-width: 80px; padding: 10px 6px; text-align: center; font-size: 11px; font-weight: 500; color: var(--muted-foreground); cursor: pointer; border: none; border-bottom: 2px solid transparent; background: transparent; transition: background 0.2s, color 0.2s; white-space: nowrap; }
+        .ultimate-tab:hover { background-color: var(--accent); color: var(--accent-foreground); }
+        .ultimate-tab.active { color: var(--primary); border-bottom-color: var(--primary); background-color: var(--accent); }
+        .ultimate-tab.disabled { opacity: 0.5; cursor: not-allowed; }
+        .ultimate-tab.locked { color: var(--destructive); cursor: not-allowed; opacity: 0.7; }
+        .ultimate-tab .tab-icon { display: block; font-size: 16px; margin-bottom: 3px; }
         
-        if (gratisButton.length > 0) {
-            // Cliquer sur le bouton
-            gratisButton.click();
-            
-            // Récupérer les informations de la ville actuelle
-            const town = uw.ITowns.getCurrentTown();
-            if (!town) return;
-            
-            // Chercher une construction de moins de 5 minutes (300 secondes)
-            const buildingOrders = town.buildingOrders();
-            if (!buildingOrders || !buildingOrders.models) return;
-            
-            for (let model of buildingOrders.models) {
-                if (model.attributes && model.attributes.building_time < 300) {
-                    callGratis(town.id, model.id);
-                    return;
-                }
-            }
-        }
-    } catch (e) {
-        log('BUILD', `Erreur Auto Gratis: ${e.message}`, 'error');
-    }
-}
+        .ultimate-main { display: flex; flex: 1; overflow: hidden; }
+        .ultimate-body { padding: 15px; flex: 1; overflow-y: auto; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
 
-function callGratis(townId, orderId) {
-    try {
-        const data = {
-            model_url: `BuildingOrder/${orderId}`,
-            action_name: 'buyInstant',
-            arguments: { order_id: orderId },
-            town_id: townId
-        };
+        /* Pont pour tes sous-fichiers externes (build.js, farm.js etc.) */
+        .btn { background-color: var(--primary); color: var(--primary-foreground); padding: 0.5rem 1rem; border-radius: var(--radius); font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: opacity 0.2s; border: none; text-align: center; display: inline-block; }
+        .btn:hover { opacity: 0.9; }
+        .btn-success { background-color: var(--color-green-600); color: white; }
+        .btn-danger { background-color: var(--destructive); color: var(--destructive-foreground); }
+        .btn-discord { background-color: #5865F2; color: white; }
+        .btn-full { width: 100%; box-sizing: border-box; }
+
+        /* Composants des pages */
+        .bot-section { background-color: var(--card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden; }
+        .section-header { background-color: var(--muted); padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-weight: 600; font-size: 0.875rem; border-bottom: 1px solid var(--border); color: var(--foreground); }
+        .section-header:hover { opacity: 0.9; }
+        .section-content { padding: 1rem; }
+        .section-header.collapsed + .section-content { display: none; }
+
+        /* Contrôles et inputs */
+        .main-control { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background-color: var(--accent); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1rem; }
+        .main-control.inactive { opacity: 0.7; }
+        .control-info .control-label { font-weight: 600; font-size: 0.875rem; color: var(--foreground); }
+        .control-info .control-status { font-size: 0.75rem; color: var(--color-green-500); margin-top: 0.25rem; }
+        .main-control.inactive .control-status { color: var(--destructive); }
+
+        .option-select, .option-input { background-color: var(--background); border: 1px solid var(--input); border-radius: var(--radius); color: var(--foreground); padding: 0.5rem; font-size: 0.875rem; width: 100%; box-sizing: border-box; }
+        .option-select:focus, .option-input:focus { outline: none; border-color: var(--ring); box-shadow: 0 0 0 1px var(--ring); }
+        .option-group { display: flex; flex-direction: column; gap: 6px; }
+        .option-label { font-size: 0.7rem; color: var(--muted-foreground); text-transform: uppercase; font-weight: 600; }
+        .options-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+
+        /* Stats & Timers */
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .stat-box { background-color: var(--background); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; text-align: center; }
+        .stat-value { font-size: 1.5rem; font-weight: bold; color: var(--primary); }
+        .stat-label { font-size: 0.7rem; color: var(--muted-foreground); text-transform: uppercase; margin-top: 4px; font-weight: 600; }
         
-        const townName = uw.ITowns.getTown(townId)?.getName() || `Ville ${townId}`;
+        .timer-container { background-color: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; text-align: center; }
+        .timer-label { font-size: 0.75rem; color: var(--muted-foreground); text-transform: uppercase; margin-bottom: 8px; font-weight: 600; }
+        .timer-value { font-size: 2rem; font-weight: bold; color: var(--color-green-500); font-variant-numeric: tabular-nums; }
+        .timer-value.ready { color: var(--primary); }
+
+        /* Les boutons Toggle On/Off */
+        .toggle-switch { position: relative; width: 44px; height: 24px; cursor: pointer; }
+        .toggle-switch input { display: none; }
+        .toggle-slider { position: absolute; inset: 0; background-color: var(--input); border-radius: 9999px; transition: 0.3s; }
+        .toggle-slider::before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: 0.3s; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .toggle-switch input:checked + .toggle-slider { background-color: var(--primary); }
+        .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+        /* Console et Logs */
+        .ultimate-console { width: 280px; background-color: rgba(0,0,0,0.02); border-left: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+        .console-header { padding: 12px 15px; background-color: var(--muted); border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; color: var(--foreground); display: flex; align-items: center; gap: 8px; }
+        .console-content { flex: 1; overflow-y: auto; padding: 10px; }
+        .log-entry { padding: 6px 8px; margin-bottom: 4px; border-radius: 0 var(--radius) var(--radius) 0; font-size: 11px; background-color: var(--background); border-left: 3px solid var(--border); color: var(--foreground); }
+        .log-entry.success { border-left-color: var(--color-green-500); }
+        .log-entry.error { border-left-color: var(--destructive); }
+        .log-entry.info { border-left-color: var(--color-blue-500); }
+        .log-entry.warning { border-left-color: var(--color-yellow-500); }
+        .log-time { color: var(--muted-foreground); font-family: monospace; font-size: 9px; display: block; margin-bottom: 2px; }
+        .log-module { font-weight: bold; color: var(--primary); margin-right: 5px; }
+
+        /* Scrollbars customs */
+        .ultimate-body::-webkit-scrollbar, .console-content::-webkit-scrollbar { width: 6px; }
+        .ultimate-body::-webkit-scrollbar-track, .console-content::-webkit-scrollbar-track { background: var(--muted); border-radius: 4px; }
+        .ultimate-body::-webkit-scrollbar-thumb, .console-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .ultimate-body::-webkit-scrollbar-thumb:hover, .console-content::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
         
-        uw.gpAjax.ajaxPost('frontend_bridge', 'execute', data, null, {
-            success: function() {
-                buildData.stats.gratisClaimed++;
-                saveData();
-                updateStats();
-                log('BUILD', `${townName}: Gratis utilisé (Order ${orderId})`, 'success');
-            },
-            error: function(error) {
-                log('BUILD', `${townName}: Erreur Gratis: ${error}`, 'error');
-            }
-        });
-    } catch (e) {
-        log('BUILD', `Erreur callGratis: ${e.message}`, 'error');
-    }
-}
+        /* Message d'accès refusé / Module verrouillé */
+        .access-denied-overlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.8); backdrop-filter: blur(4px); z-index: 100001; display: flex; align-items: center; justify-content: center; }
+        .access-denied-box { background-color: var(--background); border: 1px solid var(--destructive); border-radius: var(--radius); padding: 2.5rem; text-align: center; max-width: 500px; color: var(--foreground); box-shadow: var(--tw-shadow-xl); }
+        .access-denied-title { font-size: 1.5rem; font-weight: bold; color: var(--destructive); margin-bottom: 1rem; }
+        .access-denied-info { background-color: var(--muted); border-radius: var(--radius); padding: 1rem; margin: 1.5rem 0; text-align: left; }
+        .locked-module-container { text-align: center; padding: 60px 20px; }
+        .locked-module-title { font-size: 1.5rem; color: var(--destructive); font-weight: bold; margin-bottom: 10px; }
+    `);
 
-let processingAllQueues = false;
-let processingTownId = null;
-let routineBlockedTowns = new Set();
-
-function randomDelay(minMs,maxMs){
-    const a=Math.max(0,Number(minMs)||0), b=Math.max(a,Number(maxMs)||a);
-    return Math.round(a + Math.random()*(b-a));
-}
-function sleep(ms){ return new Promise(resolve=>setTimeout(resolve,Math.max(0,ms|0))); }
-function humanActionDelay(){
-    return buildData.settings.humanizer===false ? 250 : randomDelay(buildData.settings.humanizerMinDelay||1000,buildData.settings.humanizerMaxDelay||2000);
-}
-function humanTownDelay(){
-    return buildData.settings.humanizer===false ? 700 : randomDelay(buildData.settings.humanizerTownMinDelay||2500,buildData.settings.humanizerTownMaxDelay||4500);
-}
-
-function getSelectedTownGroupIds(){
-    try{
-        const groups=uw.MM?.getCollections?.()?.TownGroup;
-        const townGroups=groups&&groups[0];
-        if(townGroups){
-            const activeId=townGroups.getActiveGroupId?.();
-            const models=activeId!==undefined&&activeId!==null ? townGroups.getTowns?.(activeId) : null;
-            if(models && typeof models[Symbol.iterator]==='function'){
-                const ids=[];
-                for(const model of models){
-                    const id=typeof model?.getTownId==='function'?model.getTownId():(model?.id??model?.attributes?.town_id??model?.attributes?.id);
-                    if(id!=null && uw.ITowns.getTown(id)) ids.push(String(id));
-                }
-                if(ids.length) return [...new Set(ids)];
-            }
-        }
-    }catch(e){ log('BUILD',`Impossible de lire le groupe de villes actif: ${e.message}`,'info'); }
-    const towns=uw.ITowns?.getTowns?.()||{};
-    return Object.values(towns).map(t=>String(t.id));
-}
-
-function getQueuedTownIds(){
-    const ids=getSelectedTownGroupIds();
-    return ids.filter(tid=>buildData.queues[tid]?.length || buildData.researchQueues?.[tid]?.length || buildData.actionQueues?.[tid]?.length);
-}
-
-function syncTemplateUIForCurrentTown(force=false){
-    const tid=String(uw.Game?.townId||'');
-    if(!tid || (!force && lastTemplateUiTownId===tid)) return;
-    lastTemplateUiTownId=tid;
-    const activeName=buildData.activeTemplates?.[tid];
-    if(activeName && buildData.templates?.[activeName]){
-        loadTemplateIntoUI(buildData.templates[activeName]);
-        refreshTemplateSelect(activeName);
-        renderExecutionQueuePreview();
-    }else{
-        resetCurrentTemplateUI();
-        refreshTemplateSelect();
-        const sel=document.getElementById('tpl-select'); if(sel) sel.value='';
-        updateQueueDisplay();
-        refreshSenateQueue();
-    }
-}
-
-async function switchToTownHumanized(tid){
-    tid=Number(tid);
-    const current=Number(uw.Game?.townId);
-    if(Number.isFinite(tid) && current===tid){
-        try{ syncTemplateUIForCurrentTown(true); }catch(e){}
-        return true;
+    function log(module, msg, type = 'info') {
+        const t = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        logs.unshift({ t, module, msg, type });
+        if (logs.length > 100) logs.pop();
+        updateConsole();
     }
 
-    if(!Number.isFinite(tid) || tid<=0){
-        log('BUILD',`ID de ville invalide: ${tid}`,'error');
-        return false;
-    }
-
-    try{
-        // IMPORTANT : même mécanisme que GrepoAuto/GrepolisInjected.
-        // HelperTown.townSwitch() ne retourne pas nécessairement une Promise :
-        // on l'appelle puis on attend explicitement le changement de Game.townId.
-        if(!(uw.HelperTown && typeof uw.HelperTown.townSwitch==='function')){
-            log('BUILD','HelperTown.townSwitch indisponible : impossible de changer de ville','error');
-            return false;
+    function updateConsole() {
+        const container = document.getElementById('console-logs');
+        if (!container) return;
+        if (logs.length === 0) {
+            container.innerHTML = '<div class="logs-empty">Aucune activite</div>';
+            return;
         }
-
-        log('BUILD',`Changement de ville ${current||'?'} → ${tid}`,'info');
-        uw.HelperTown.townSwitch(tid);
-
-        // GrepoAuto utilise le même principe : appel direct puis attente.
-        const deadline=Date.now()+5000;
-        while(Date.now()<deadline){
-            if(Number(uw.Game?.townId)===tid){
-                await sleep(humanTownDelay());
-                try{ syncTemplateUIForCurrentTown(true); }catch(e){}
-                log('BUILD',`Ville ${tid} confirmée`,'success');
-                return true;
-            }
-            await sleep(200);
-        }
-
-        log('BUILD',`Changement de ville ${current||'?'} → ${tid} non confirmé (ville actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
-    }catch(e){
-        log('BUILD',`Erreur changement de ville ${tid}: ${e.message}`,'error');
-    }
-    return false;
-}
-
-async function demolishBuildingPromise(tid,bid,targetLevel){
-    try{
-        if(!(await openTownControlPagesHumanized(tid))) return false;
-        await sleep(humanActionDelay());
-        openSenateWindowHumanized();
-        await sleep(randomDelay(buildData.settings.humanizer===false?300:800,buildData.settings.humanizer===false?600:1600));
-        // Le bouton de démolition est déclenché via l'interface native du Sénat.
-        // On essaie plusieurs sélecteurs utilisés par les versions de Grepolis.
-        const candidates=[
-            `.building.building_${bid}:visible`,
-            `.building[data-building_id="${bid}"]:visible`,
-            `.building[data-building="${bid}"]:visible`,
-            `.building:has(.name):visible`
-        ];
-        let row=null;
-        for(const sel of candidates){const $r=uw.$(sel).filter(function(){return uw.$(this).find('.name').text().toLowerCase().includes(String(getBuildingName(bid)).toLowerCase());});if($r.length){row=$r.first();break;}}
-        if(!row||!row.length){
-            const $rows=uw.$('.building:visible');
-            $rows.each(function(){if(row)return;const txt=uw.$(this).find('.name').text().trim().toLowerCase();if(txt===String(getBuildingName(bid)).toLowerCase())row=uw.$(this);});
-        }
-        if(!row||!row.length)return false;
-        const buttons=row.find('a,button,.btn,[class*="demol"],[data-action*="demol"],[title*="Démol"],[title*="Demol"]').filter(':visible');
-        let btn=null;
-        buttons.each(function(){const txt=(uw.$(this).attr('title')||uw.$(this).text()||'').toLowerCase();if(txt.includes('demol')||txt.includes('démol')){btn=uw.$(this);return false;}});
-        if(!btn||!btn.length){
-            const all=uw.$('a,button,.btn,[data-action], [title]').filter(':visible');
-            all.each(function(){const txt=(uw.$(this).attr('title')||uw.$(this).text()||'').toLowerCase();if((txt.includes('demol')||txt.includes('démol'))&&uw.$(this).closest('.building').is(row)){btn=uw.$(this);return false;}});
-        }
-        if(!btn||!btn.length)return false;
-        let beforeOrders=0;try{beforeOrders=uw.ITowns.getTown(tid)?.buildingOrders?.().length||0;}catch(e){}
-        btn.trigger('click');
-        await sleep(randomDelay(buildData.settings.humanizer===false?700:1400,buildData.settings.humanizer===false?1100:2600));
-        // Certaines versions affichent une confirmation. On la confirme seulement si elle est visible.
-        const confirm=uw.$('button,.btn,a').filter(':visible').filter(function(){const txt=(uw.$(this).text()||'').trim().toLowerCase();return ['confirmer','confirm','oui','yes'].includes(txt);}).first();
-        if(confirm.length){confirm.trigger('click');await sleep(randomDelay(500,1200));}
-        let afterOrders=0;try{afterOrders=uw.ITowns.getTown(tid)?.buildingOrders?.().length||0;}catch(e){}
-        const actual=getTownBuildingLevels(tid)[bid]||0;
-        return afterOrders>beforeOrders || actual<=Number(targetLevel);
-    }catch(e){log('BUILD',`Erreur démolition ${getBuildingName(bid)}: ${e.message}`,'error');return false;}
-}
-
-async function buildUpPromise(tid,bid){
-    try{
-        const town=uw.ITowns?.getTown?.(tid);
-        let before=0;
-        try{ before=town?.buildingOrders?.().filter(o=>{
-            const id=typeof o.getBuildingId==='function'?o.getBuildingId():o.attributes?.building_id;
-            return String(id)===String(bid);
-        }).length||0; }catch(e){}
-
-        let callbackOk=false, callbackDone=false;
-        await new Promise(resolve=>{
-            try{
-                uw.gpAjax.ajaxPost('frontend_bridge','execute',{
-                    model_url:'BuildingOrder', action_name:'buildUp', arguments:{building_id:bid}, town_id:tid
-                },false,(resp)=>{ callbackOk=true; callbackDone=true; resolve(true); },(err)=>{ callbackOk=false; callbackDone=true; resolve(true); });
-            }catch(e){ callbackDone=true; resolve(false); }
-        });
-
-        // Grepolis peut répondre sans créer d'ordre (ressources insuffisantes, prérequis, etc.).
-        // On vérifie donc le changement réel de la file avant de considérer l'action comme réussie.
-        await sleep(buildData.settings.humanizer===false?350:randomDelay(500,900));
-        let after=0;
-        try{ after=town?.buildingOrders?.().filter(o=>{
-            const id=typeof o.getBuildingId==='function'?o.getBuildingId():o.attributes?.building_id;
-            return String(id)===String(bid);
-        }).length||0; }catch(e){}
-
-        return after>before;
-    }catch(e){
-        log('BUILD',`Erreur lancement ${getBuildingName(bid)}: ${e.message}`,'error');
-        return false;
-    }
-}
-
-function getOrderedTemplateItems(template){
-    const items=[];
-    const order=Array.isArray(template?.__order__) ? template.__order__ : [];
-    const seen=new Set();
-    const pushKey=(key)=>{
-        key=String(key);
-        if(key==='__order__'||seen.has(key)) return;
-        seen.add(key);
-        const value=Number(template?.[key])||0;
-        if(value<=0) return;
-        if(key.startsWith(RESEARCH_KEY_PREFIX)) items.push({type:'research',rid:key.slice(RESEARCH_KEY_PREFIX.length)});
-        else items.push({type:'building',buildingId:key,level:value});
-    };
-    order.forEach(pushKey);
-    Object.keys(template||{}).forEach(pushKey);
-    return items;
-}
-
-function ensureActionQueue(tid){
-    if(!buildData.actionQueues) buildData.actionQueues={};
-    if(!buildData.actionQueues[tid]) buildData.actionQueues[tid]=[];
-    return buildData.actionQueues[tid];
-}
-
-function computeCurrentTownProjectedLevels(tid){
-    const levels=getTownBuildingLevels(tid);
-    try{
-        const town=uw.ITowns.getTown(tid);
-        town?.buildingOrders?.().forEach(o=>{
-            const bid=(typeof o.getBuildingId==='function')?o.getBuildingId():o.attributes?.building_id;
-            if(bid)levels[bid]=(levels[bid]||0)+1;
-        });
-    }catch(e){}
-    return levels;
-}
-
-function queuePlanForTown(tid, template){
-    const queue=ensureActionQueue(tid);
-    queue.length=0;
-    const projected=computeCurrentTownProjectedLevels(tid);
-    const visiting=new Set();
-    const queuedResearch=new Set();
-    const researchState=getTownResearchState(tid);
-    const modes=template?.__modes__||{};
-    const pushUpgrade=(bid,target)=>{
-        target=Number(target)||0;
-        if(!bid||target<=0||visiting.has(bid))return;
-        visiting.add(bid);
-        getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>{
-            if((modes[reqBid]||'upgrade')==='demolish') return;
-            pushUpgrade(reqBid,reqLvl);
-        });
-        while((projected[bid]||0)<target){
-            const level=(projected[bid]||0)+1;
-            queue.push({type:'building',mode:'upgrade',buildingId:bid,level});
-            projected[bid]=level;
-        }
-        visiting.delete(bid);
-    };
-    const pushDemolish=(bid,target)=>{
-        target=Math.max(0,Number(target)||0);
-        const current=Number(projected[bid])||0;
-        if(!bid||current<=target)return;
-        for(let level=current-1;level>=target;level--){
-            queue.push({type:'building',mode:'demolish',buildingId:bid,level});
-            projected[bid]=level;
-        }
-    };
-    const pushResearch=(rid)=>{
-        if(queuedResearch.has(rid) || researchState[rid]===true)return;
-        const academyLevel=getResearchAcademyLevel(rid);
-        pushUpgrade('academy',academyLevel);
-        queue.push({type:'research',rid});
-        queuedResearch.add(rid);
-    };
-    getOrderedTemplateItems(template).forEach(item=>{
-        if(item.type==='building'){
-            const mode=modes[item.buildingId]||'upgrade';
-            if(mode==='demolish') pushDemolish(item.buildingId,item.level);
-            else pushUpgrade(item.buildingId,item.level);
-        }else if(item.type==='research'&&(getResearchData(item.rid)||RESEARCH_FALLBACK[item.rid])) pushResearch(item.rid);
-    });
-    return queue;
-}
-
-function renderExecutionQueuePreview(){
-    const list=document.getElementById('tpl-prereq-list');
-    if(!list)return;
-    const sel=document.getElementById('tpl-select');
-    let template=null;
-    if(sel?.value&&buildData.templates[sel.value])template=buildData.templates[sel.value];
-    else template=collectTemplateFromUI();
-    const tid=uw.Game.townId;
-    const plan=queuePlanForTown(tid,template);
-    if(!plan.length){list.innerHTML='<div style="font-size:10px;color:#8B8B83;font-style:italic;">La file apparaîtra ici dans l"ordre exact d"exécution.</div>';return;}
-    list.innerHTML=plan.map((item,i)=>{
-        if(item.type==='research')return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#D4AF37;"><span style="width:20px;text-align:right;color:#8B8B83;">${i+1}.</span><div class="research_icon research40x40 ${item.rid}" style="width:30px;height:30px;flex-shrink:0;"></div><span>${getResearchName(item.rid)}</span><strong style="margin-left:auto;color:#FFD700;">Recherche</strong></div>`;
-        const iconUrl=`https://gpfr.innogamescdn.com/images/game/main/${item.buildingId}.png`;
-        const demolish=item.mode==='demolish';
-        return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:${demolish?'#FF8A80':'#D4AF37'};"><span style="width:20px;text-align:right;color:#8B8B83;">${i+1}.</span><div style="width:30px;height:30px;border:1px solid ${demolish?'#B74D52':'#8B6914'};border-radius:3px;background:#1a1a14;overflow:hidden;flex-shrink:0;"><div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div></div><span>${getBuildingName(item.buildingId)}</span><strong style="margin-left:auto;color:${demolish?'#FF8A80':'#FFD700'};">${demolish?'démolir → '+item.level:'niv. '+item.level}</strong></div>`;
-    }).join('');
-}
-
-function openSenateWindowHumanized(){
-    try{
-        const $candidates=uw.$('.building.main:visible, .building_senate:visible, [data-building_id="main"]:visible, [data-building="main"]:visible');
-        if($candidates.length){ $candidates.first().trigger('click'); return true; }
-        if(uw.GameEvents?.window?.open) { uw.GameEvents.window.open('main'); return true; }
-    }catch(e){log('BUILD',`Impossible d'ouvrir le Sénat: ${e.message}`,'info');}
-    return false;
-}
-
-async function openTownControlPagesHumanized(tid){
-    if(!(await switchToTownHumanized(tid))) return false;
-    await sleep(humanActionDelay());
-    openSenateWindowHumanized();
-    await sleep(randomDelay(buildData.settings.humanizer===false?200:300,buildData.settings.humanizer===false?450:650));
-    if(uw.AcademyWindowFactory?.openAcademyWindow){
-        try{ uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(buildData.settings.humanizer===false?200:300,buildData.settings.humanizer===false?450:650)); }catch(e){}
-    }
-    return true;
-}
-
-async function processAllQueues(){
-    if(processingAllQueues || !buildData.enabled) return;
-    processingAllQueues=true;
-    routineBlockedTowns=new Set();
-    try{
-        const towns=getSelectedTownGroupIds().map(String);
-        const active=buildData.activeTemplates||{};
-        for(const tid of towns){
-            if(!buildData.enabled) break;
-            if(routineBlockedTowns.has(String(tid))) continue;
-            const q=buildData.actionQueues?.[tid]||[];
-            const templateName=active[String(tid)];
-            if(!q.length && templateName && buildData.templates?.[templateName]){
-                buildData.actionQueues[tid]=queuePlanForTown(tid,buildData.templates[templateName]);
-                buildData.queues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='building').map(a=>({buildingId:a.buildingId,level:a.level}));
-                buildData.researchQueues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='research').map(a=>a.rid);
-                saveData();
-            }
-            if((buildData.actionQueues?.[tid]||[]).length){
-                let result;
-                try{
-                    result=await processTownActionQueue(tid);
-                }catch(e){
-                    log('BUILD', `${uw.ITowns.getTown(tid)?.getName?.()||tid}: erreur inattendue (${e.message}) → passage à la ville suivante`, 'error');
-                    result={blocked:true, reason:'exception: '+e.message};
-                }
-                if(result?.blocked){
-                    routineBlockedTowns.add(String(tid));
-                    log('BUILD',`${uw.ITowns.getTown(tid)?.getName?.()||tid}: passage a la ville suivante (${result.reason})`,'info');
-                }
-                if(buildData.enabled) await sleep(humanTownDelay());
-            }
-        }
-    }finally{processingAllQueues=false;processingTownId=null;}
-}
-
-function hasPendingBuildingOrder(tid, bid) {
-    try {
-        const town = uw.ITowns.getTown(tid);
-        const orders = town?.buildingOrders?.() || [];
-        return orders.some(o => {
-            const id = (typeof o.getBuildingId === 'function') ? o.getBuildingId() : o.attributes?.building_id;
-            return String(id) === String(bid);
-        });
-    } catch (e) {
-        return false;
-    }
-}
-
-async function processTownActionQueue(tid){
-    if(!buildData.enabled) return {blocked:false, reason:'disabled'};
-    const q=buildData.actionQueues?.[tid]||[];
-    if(!q.length) return {blocked:false, reason:'empty'};
-    processingTownId=String(tid);
-    if(!(await openTownControlPagesHumanized(tid))) return {blocked:true, reason:'ouverture de ville impossible'};
-
-    // Recherches impossibles pendant CETTE routine : elles restent strictement
-    // à leur position dans la file et seront retentées en priorité à la prochaine routine.
-    const skippedResearchIds = new Set();
-
-    while(buildData.enabled && q.length){
-        // On cherche la première action qui peut encore être tentée pendant cette routine.
-        // Une recherche déjà bloquée est ignorée temporairement, mais jamais supprimée.
-        let actionIndex=-1;
-        for(let i=0;i<q.length;i++){
-            const candidate=q[i];
-            if(candidate?.type==='research' && skippedResearchIds.has(String(candidate.rid))) continue;
-            actionIndex=i;
-            break;
-        }
-
-        // Plus aucune action n'est exécutable pendant cette routine :
-        // on quitte immédiatement cette ville et on passe à la suivante.
-        if(actionIndex<0){
-            saveData(); updateQueueDisplay(); refreshSenateQueue();
-            return {blocked:true, reason:'aucune action exécutable pour cette routine'};
-        }
-
-        const action=q[actionIndex];
-        const town=uw.ITowns.getTown(tid);
-        if(!town){
-            saveData();
-            return {blocked:true, reason:'ville introuvable'};
-        }
-
-        if(action.type==='building'){
-            let orders=[]; try{orders=town.buildingOrders?.()||[];}catch(e){}
-            const max=uw.GameDataPremium?.isAdvisorActivated?.('curator')?7:2;
-            if(orders.length>=max){
-                log('BUILD',`${town.getName?.()||tid}: file de construction pleine (${orders.length}/${max})`,'info');
-                saveData(); updateQueueDisplay(); refreshSenateQueue();
-                return {blocked:true, reason:'file de construction pleine'};
-            }
-
-            await sleep(humanActionDelay());
-            let ok=false;
-            if(action.mode==='demolish') ok=await demolishBuildingPromise(tid,action.buildingId,action.level);
-            else ok=await buildUpPromise(tid,action.buildingId);
-
-            if(!ok){
-                log('BUILD',`${town.getName?.()||tid}: impossible de ${action.mode==='demolish'?'démolir':'construire'} ${getBuildingName(action.buildingId)} (niveau cible ${action.level}) → passage à la ville suivante`,'info');
-                saveData(); updateQueueDisplay(); refreshSenateQueue();
-                return {blocked:true, reason:'construction/démolition impossible (ressources ou conditions)'};
-            }
-
-            q.splice(actionIndex,1);
-            if(buildData.queues[tid]?.length){
-                const idx=buildData.queues[tid].findIndex(x=>x.buildingId===action.buildingId && x.level===action.level);
-                if(idx>=0) buildData.queues[tid].splice(idx,1);
-            }
-            buildData.stats.built++; saveData(); updateStats(); updateQueueDisplay(); refreshSenateQueue();
-            log('BUILD',`${town.getName?.()||tid}: ${action.mode==='demolish'?'Démolition '+getBuildingName(action.buildingId)+' → niv.'+action.level:getBuildingName(action.buildingId)+' niv.'+action.level}`,'success');
-            continue;
-        }
-
-        if(action.type==='research'){
-            const researched=getTownResearchState(tid);
-            if(researched[action.rid]===true){
-                q.splice(actionIndex,1);
-                continue;
-            }
-
-            const academy=(town.getBuildings&&town.getBuildings().getBuildings())?.academy||0;
-            const neededAcademy=getResearchAcademyLevel(action.rid);
-
-            if(academy<neededAcademy){
-                if(hasPendingBuildingOrder(tid,'academy')){
-                    skippedResearchIds.add(String(action.rid));
-                    log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} en attente (Académie ${academy}/${neededAcademy} — construction en cours) → tentative des actions suivantes`,'info');
-                    continue;
-                }
-
-                log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} impossible (Académie ${academy}/${neededAcademy}, aucune construction en cours) → passage à la ville suivante`,'info');
-                saveData(); updateQueueDisplay(); refreshSenateQueue();
-                return {blocked:true, reason:'recherche bloquée: Académie insuffisante et aucune construction en cours'};
-            }
-
-            await sleep(humanActionDelay());
-            if(uw.AcademyWindowFactory?.openAcademyWindow){
-                try{uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(350,750));}catch(e){}
-            }
-
-            const selectors=[`div[data-research_id*="${action.rid}"]`,`[data-research_id="${action.rid}"]`,`.research_icon.research.${action.rid}`,`.research_technology.${action.rid}`,`.research.${action.rid}`];
-            let $candidate=null;
-            for(const sel of selectors){const $el=uw.$(sel).filter(':visible');if($el&&$el.length){$candidate=$el.first();break;}}
-
-            // Tout échec d'une recherche la rend temporairement bloquée pour CETTE routine.
-            // On continue obligatoirement vers l'action suivante.
-            if(!$candidate||!$candidate.length){
-                skippedResearchIds.add(String(action.rid));
-                log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} impossible à lancer maintenant → tentative des actions suivantes`,'info');
-                continue;
-            }
-
-            const $button=$candidate.closest('button,.btn,.research_technology,.research').first();
-            try{
-                ($button.length?$button:$candidate).click();
-            }catch(e){
-                skippedResearchIds.add(String(action.rid));
-                log('BUILD',`${town.getName?.()||tid}: clic impossible pour ${getResearchName(action.rid)} → tentative des actions suivantes`,'info');
-                continue;
-            }
-            q.splice(actionIndex,1);
-            if(buildData.researchQueues?.[tid]){
-                const ri=buildData.researchQueues[tid].indexOf(action.rid);
-                if(ri>=0) buildData.researchQueues[tid].splice(ri,1);
-            }
-            saveData(); updateStats(); updateQueueDisplay(); refreshSenateQueue();
-            log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(action.rid)} lancée`,'success');
-            await sleep(buildData.settings.humanizer===false?500:randomDelay(650,1100));
-            continue;
-        }
-
-        q.splice(actionIndex,1);
-    }
-
-    saveData(); updateQueueDisplay(); refreshSenateQueue();
-    return {blocked:false, reason:'termine'};
-}
-
-async function processTownQueue(tid){
-    return processTownActionQueue(tid);
-}
-
-function addToQueue(bid, lvl) {
-    const tid = uw.Game.townId;
-    if (!buildData.queues[tid]) buildData.queues[tid] = [];
-    if (!buildData.actionQueues) buildData.actionQueues = {};
-    if (!buildData.actionQueues[tid]) buildData.actionQueues[tid] = [];
-    const action = { type:'building', mode:'upgrade', buildingId: bid, level: lvl };
-    buildData.queues[tid].push({ buildingId: bid, level: lvl });
-    buildData.actionQueues[tid].push(action);
-    saveData();
-    log('BUILD', `+ ${NAMES[bid]} niv.${lvl}`, 'success');
-    refreshSenateQueue();
-    updateStats();
-    updateQueueDisplay();
-    uw.$('.ab-btn').remove();
-    if (buildData.enabled) processTownActionQueue(tid);
-}
-
-function removeActionFromQueue(idx){
-    const tid=uw.Game.townId;
-    const q=buildData.actionQueues?.[tid]||[];
-    if(idx<0||idx>=q.length)return;
-    const removed=q.splice(idx,1)[0];
-    if(removed?.type==='building' && buildData.queues?.[tid]){
-        const bi=buildData.queues[tid].findIndex(x=>x.buildingId===removed.buildingId&&x.level===removed.level);
-        if(bi>=0)buildData.queues[tid].splice(bi,1);
-    }
-    if(removed?.type==='research' && buildData.researchQueues?.[tid]){
-        const ri=buildData.researchQueues[tid].indexOf(removed.rid);
-        if(ri>=0)buildData.researchQueues[tid].splice(ri,1);
-    }
-    saveData(); updateStats(); updateQueueDisplay(); refreshSenateQueue();
-    log('BUILD',`Action supprimée de la file: ${removed?.type==='research'?getResearchName(removed.rid):getBuildingName(removed.buildingId)}`,'info');
-}
-
-function removeFromQueue(idx) {
-    const tid = uw.Game.townId;
-    if (buildData.actionQueues?.[tid]) {
-        const aidx = buildData.actionQueues[tid].findIndex((a, i) => a.type === 'building' && buildData.actionQueues[tid].slice(0,i+1).filter(x=>x.type==='building').length===idx+1);
-        if(aidx>=0) buildData.actionQueues[tid].splice(aidx,1);
-    }
-    if (buildData.queues[tid]) buildData.queues[tid].splice(Math.min(idx, buildData.queues[tid].length-1), 1);
-    saveData();
-    refreshSenateQueue();
-    updateStats();
-    updateQueueDisplay();
-    uw.$('.ab-btn').remove();
-}
-
-function startSenateWatcher() {
-    if (senateWatcherInterval) clearInterval(senateWatcherInterval);
-    senateWatcherInterval = setInterval(() => {
-        syncTemplateUIForCurrentTown();
-        injectSenateQueue();
-        addBuildButtons();
-    }, 1000);
-}
-
-function injectSenateQueue() {
-    if (uw.$('#autobuild-senate-queue').length) {
-        refreshSenateQueue();
-        return;
-    }
-
-    const $bt = uw.$('#building_tasks_main');
-    if (!$bt.length) return;
-
-    const queue = (buildData.actionQueues?.[uw.Game.townId] || []);
-    
-    const $parent = $bt.closest('.gpwindow_content');
-    if ($parent.length && $parent.css('overflow') !== 'auto') {
-        $parent.css({ 'overflow-y': 'auto', 'overflow-x': 'hidden' });
-    }
-    
-    $bt.after(`<div id="autobuild-senate-queue" style="background:linear-gradient(180deg,rgba(45,34,23,0.95),rgba(30,23,15,0.95));border:2px solid #D4AF37;border-radius:6px;margin:10px;padding:10px;flex-shrink:0;">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(212,175,55,0.3);">
-            <span style="font-family:Cinzel,serif;font-size:12px;color:#F5DEB3;">File Auto Build</span>
-            <span style="background:rgba(212,175,55,0.3);color:#FFD700;padding:2px 8px;border-radius:10px;font-size:10px;">${queue.length}</span>
-        </div>
-        <div class="queue-items" style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;"></div>
-    </div>`);
-    refreshSenateQueue();
-}
-
-function refreshSenateQueue() {
-    const queue = (buildData.actionQueues?.[uw.Game.townId] || []);
-    const $items = uw.$('#autobuild-senate-queue .queue-items');
-    const $count = uw.$('#autobuild-senate-queue').find('span:last');
-    
-    if ($count.length) $count.text(queue.length);
-    
-    if ($items.length) {
-        if (queue.length === 0) {
-            $items.html('<div style="color:#8B8B83;font-style:italic;text-align:center;padding:15px;">File vide - Utilisez les boutons "+ FILE"</div>');
-        } else {
-            $items.html(queue.map((it, i) => {
-                if(it.type==='research'){
-                    return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #6A8FB5;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getResearchName(it.rid)}">
-                        <div class="research_icon research40x40 ${it.rid}" style="width:38px;height:38px;margin:5px auto 0;"></div>
-                        <span style="position:absolute;bottom:2px;right:2px;background:#315D86;color:#fff;font-weight:bold;font-size:9px;padding:1px 4px;border-radius:3px;">R</span><span onclick="event.stopPropagation();GU_Build.removeAction(${i})" title="Supprimer" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;">×</span>
-                    </div>`;
-                }
-                const iconUrl = `https://gpfr.innogamescdn.com/images/game/main/${it.buildingId}.png`;
-                return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;display:inline-block;margin:3px;cursor:pointer;" title="${getBuildingName(it.buildingId)} niv.${it.level}">
-                    <div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div>
-                    <span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.mode==='demolish'?'D':it.level}</span>
-                    <span onclick="event.stopPropagation();GU_Build.removeAction(${i})" title="Supprimer" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;">×</span>
-                </div>`;
-            }).join(''));
-            $items.find('div[title]').hover(function(){ uw.$(this).find('div:last').show(); }, function(){ uw.$(this).find('div:last').hide(); });
-        }
-    }
-}
-
-function addBuildButtons() {
-    const $w = uw.$('.gpwindow_content:visible');
-    if (!$w.length) return;
-
-    $w.find('.building').each(function() {
-        const $b = uw.$(this);
-        if ($b.find('.ab-btn').length) return;
-
-        const $name = $b.find('.name').first();
-        let nameStr = $name.text().trim().toLowerCase();
-        nameStr = nameStr.replace(/\s+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        
-        let bid = FR_TO_ID[nameStr];
-
-        if (!bid) {
-            const nameNorm = nameStr.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-            for (const [k, v] of Object.entries(FR_TO_ID)) {
-                const kNorm = k.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                if (nameNorm.includes(kNorm) || kNorm.includes(nameNorm)) { 
-                    bid = v; 
-                    break; 
-                }
-            }
-        }
-        
-        if (!bid) {
-            const buildingClasses = $b.attr('class') || '';
-            const classMatch = buildingClasses.match(/building_([a-z_]+)/);
-            if (classMatch && classMatch[1]) {
-                bid = classMatch[1];
-            }
-        }
-        
-        if (!bid) return;
-
-        const currentLvl = parseInt($b.find('.level').first().text()) || 0;
-        const town = uw.ITowns.getTown(uw.Game.townId);
-        const inRealQueue = town.buildingOrders().filter(o => o.getBuildingId() === bid).length;
-        const inAutoQueue = (buildData.queues[uw.Game.townId] || []).filter(it => it.buildingId === bid).length;
-        const nextLvl = currentLvl + inRealQueue + inAutoQueue + 1;
-
-        $name.append(`<span class="ab-btn" onclick="event.stopPropagation();GU_Build.add('${bid}',${nextLvl})" style="background:linear-gradient(145deg,#D4AF37,#8B6914);border:1px solid #FFD700;color:#1a1408;font-size:8px;font-weight:bold;padding:2px 5px;margin-left:4px;cursor:pointer;border-radius:3px;">+ FILE</span>`);
-    });
-}
-
-function updateQueueDisplay() {
-    const container = document.getElementById('build-queue-display');
-    if (!container) return;
-    
-    const queue = (buildData.actionQueues?.[uw.Game.townId] || []);
-    if (queue.length === 0) {
-        container.innerHTML = '<div style="color: #8B8B83; font-style: italic; padding: 15px; text-align: center; width: 100%;">Ouvrez le Senat pour ajouter des constructions</div>';
-    } else {
-        container.innerHTML = queue.map((it, i) => {
-            if(it.type==='research') return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #6A8FB5;border-radius:4px;position:relative;cursor:pointer;" title="${getResearchName(it.rid)}"><div class="research_icon research40x40 ${it.rid}" style="width:38px;height:38px;margin:5px auto 0;"></div><span style="position:absolute;bottom:2px;right:2px;background:#315D86;color:#fff;font-weight:bold;font-size:9px;padding:1px 4px;border-radius:3px;">R</span><span onclick="event.stopPropagation();GU_Build.removeAction(${i})" title="Supprimer" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;">×</span></div>`;
-            const iconUrl = `https://gpfr.innogamescdn.com/images/game/main/${it.buildingId}.png`;
-            return `<div style="width:50px;height:50px;background:#1a1a14;border:2px solid #8B6914;border-radius:4px;position:relative;cursor:pointer;" title="${getBuildingName(it.buildingId)} niv.${it.level}"><div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div><span style="position:absolute;bottom:2px;right:2px;background:linear-gradient(145deg,#D4AF37,#8B6914);color:#1a1408;font-weight:bold;font-size:10px;padding:1px 4px;border-radius:3px;">${it.level}</span><span onclick="event.stopPropagation();GU_Build.removeAction(${i})" title="Supprimer" style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;background:#E53935;color:#fff;border:2px solid #FFCDD2;border-radius:50%;font-size:10px;line-height:12px;text-align:center;cursor:pointer;">×</span></div>`;
+        container.innerHTML = logs.slice(0, 50).map(l => {
+            const moduleClass = l.module.toLowerCase();
+            return `<div class="log-entry ${l.type} ${moduleClass}"><span class="log-time">${l.t}</span><span class="log-module">[${l.module}]</span><span class="log-message">${l.msg}</span></div>`;
         }).join('');
     }
-}
 
-// ============================================================================
-// TEMPLATES DE CONSTRUCTION
-// ============================================================================
-
-function recordTemplateOrder(key){
-    key=String(key);
-    templateEditOrder=templateEditOrder.filter(k=>k!==key);
-    templateEditOrder.push(key);
-}
-
-function initSpecialToggleHandlers() {
-    document.querySelectorAll('.tpl-special-cell').forEach(cell => {
-        cell.onclick=()=>{
-            const bid=cell.dataset.bid;
-            const group=SPECIAL_LEFT.includes(bid)?SPECIAL_LEFT:SPECIAL_RIGHT;
-            const wasSelected=cell.dataset.selected==='1';
-            group.forEach(gid=>{const el=document.querySelector(`.tpl-special-cell[data-bid="${gid}"]`);if(!el)return;el.dataset.selected='0';el.querySelector('.tpl-special-icon').style.borderColor='#4a4a3a';el.querySelector('.tpl-special-icon div').style.opacity='0.5';});
-            if(!wasSelected){
-                cell.dataset.selected='1';
-                cell.querySelector('.tpl-special-icon').style.borderColor='#FFD700';
-                cell.querySelector('.tpl-special-icon div').style.opacity='1';
-                const levelInput=cell.querySelector('.tpl-special-level-input');
-                if(levelInput && !(parseInt(levelInput.value)||0)) levelInput.value='1';
-                recordTemplateOrder(bid);
-                applyPrerequisitesToTemplateUI();
-            } else {
-                templateEditOrder=templateEditOrder.filter(k=>k!==bid);
-                const levelInput=cell.querySelector('.tpl-special-level-input');
-                if(levelInput) levelInput.value='0';
-                refreshTemplatePrerequisites(true);
+    function checkWhitelist(callback) {
+        console.log('[GU] Verification whitelist...');
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: `${WHITELIST_URL}?v=${Date.now()}`,
+            onload: function(response) {
+                if (response.status === 200) {
+                    try {
+                        whitelistData = JSON.parse(response.responseText);
+                        const playerName = getPlayerName().toLowerCase();
+                        const worldId = getWorldName().toLowerCase();
+                        const playerId = getPlayerId();
+                        let access = null;
+                        if (whitelistData.players) {
+                            for (const entry of whitelistData.players) {
+                                const nameMatch = entry.name.toLowerCase() === playerName || entry.playerId === playerId;
+                                if (nameMatch) {
+                                    if (!entry.servers || entry.servers.length === 0 || entry.servers.includes('*')) {
+                                        access = entry;
+                                        break;
+                                    }
+                                    if (entry.servers.some(s => s.toLowerCase() === worldId)) {
+                                        access = entry;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (access) {
+                            userAccess = {
+                                allowed: true,
+                                modules: access.modules || ['*'],
+                                name: access.name,
+                                servers: access.servers || ['*']
+                            };
+                            console.log('[GU] Acces autorise:', userAccess);
+                            callback(true);
+                        } else {
+                            userAccess = { allowed: false, reason: 'not_whitelisted' };
+                            console.log('[GU] Acces refuse - non whitelist');
+                            callback(false);
+                        }
+                    } catch (e) {
+                        console.error('[GU] Erreur parsing whitelist:', e);
+                        userAccess = { allowed: true, modules: ['*'] };
+                        callback(true);
+                    }
+                } else {
+                    console.log('[GU] Whitelist non trouvee, acces autorise par defaut');
+                    userAccess = { allowed: true, modules: ['*'] };
+                    callback(true);
+                }
+            },
+            onerror: function() {
+                console.log('[GU] Erreur reseau whitelist, acces autorise');
+                userAccess = { allowed: true, modules: ['*'] };
+                callback(true);
             }
-            renderExecutionQueuePreview();
-        };
-    });
-}
-
-function initResearchToggleHandlers(){
-    document.querySelectorAll('.tpl-research-cell').forEach(cell=>{
-        cell.onclick=()=>{
-            const rid=cell.dataset.rid, key=RESEARCH_KEY_PREFIX+rid;
-            const selected=cell.dataset.selected==='1';
-            cell.dataset.selected=selected?'0':'1';
-            cell.style.opacity=selected?'0.48':'1';
-            cell.style.borderColor=selected?'#4a4a3a':'#FFD700';
-            if(!selected) recordTemplateOrder(key);
-            else templateEditOrder=templateEditOrder.filter(k=>k!==key);
-            refreshTemplatePrerequisites(true);
-            renderExecutionQueuePreview();
-        };
-    });
-}
-
-function initTemplateInputHandlers(){
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{
-        const handler=()=>{
-            const bid=inp.dataset.bid;
-            const lvl=parseInt(inp.value)||0;
-            if(lvl>0) recordTemplateOrder(bid);
-            else templateEditOrder=templateEditOrder.filter(k=>k!==bid);
-            refreshTemplatePrerequisites(true);
-            renderExecutionQueuePreview();
-        };
-        inp.addEventListener('input',handler);
-        inp.addEventListener('change',handler);
-    });
-}
-
-// Calcule les prérequis à partir de toutes les sélections actuelles et
-// les écrit immédiatement dans l'interface. Cette fonction ne sauvegarde
-// rien et ne modifie pas la file de construction : elle prépare le template.
-function applyPrerequisitesToTemplateUI(){
-    const result=calculateTemplateRequirements();
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{
-        const bid=inp.dataset.bid;
-        const explicit=Number(inp.value)||0;
-        const required=Number(result.buildings[bid])||0;
-        const max=getBuildingMaxLevel(bid);
-        const finalLevel=Math.min(Math.max(explicit,required),max);
-        if(explicit!==finalLevel) inp.value=String(finalLevel);
-        inp.style.borderColor=(required>explicit)?'#66BB6A':'#8B6914';
-        inp.title=(required>explicit)
-            ? `${getBuildingName(bid)} — prérequis du template: niveau ${required}`
-            : getBuildingName(bid);
-    });
-    refreshTemplatePrerequisites(false);
-}
-
-function initSpecialLevelInputHandlers(){
-    document.querySelectorAll('.tpl-special-level-input').forEach(inp=>{
-        inp.addEventListener('click',e=>e.stopPropagation());
-        const handler=()=>{
-            const bid=inp.dataset.bid;
-            const cell=document.querySelector(`.tpl-special-cell[data-bid="${bid}"]`);
-            const lvl=Math.max(0,Math.min(1,parseInt(inp.value)||0));
-            inp.value=String(lvl);
-            if(cell?.dataset.selected==='1'){
-                if(lvl>0)recordTemplateOrder(bid);
-                else templateEditOrder=templateEditOrder.filter(k=>k!==bid);
-            }
-            renderExecutionQueuePreview();
-        };
-        inp.addEventListener('input',handler);
-        inp.addEventListener('change',handler);
-    });
-}
-
-function getTemplateBuildingMode(bid){
-    const el=document.querySelector(`.tpl-mode-select[data-bid="${bid}"]`);
-    return el?.value==='demolish' ? 'demolish' : 'upgrade';
-}
-
-function initTemplateModeHandlers(){
-    document.querySelectorAll('.tpl-mode-select').forEach(sel=>{
-        sel.addEventListener('click',e=>e.stopPropagation());
-        sel.addEventListener('change',()=>{
-            const bid=sel.dataset.bid;
-            const mode=sel.value==='demolish'?'demolish':'upgrade';
-            const inp=document.querySelector(`.tpl-level-input[data-bid="${bid}"]`);
-            if(inp){
-                inp.title = mode==='demolish' ? `${getBuildingName(bid)} — niveau cible après démolition` : getBuildingName(bid);
-                inp.style.color = mode==='demolish' ? '#FF8A80' : '#FFD700';
-            }
-            const specialInp=document.querySelector(`.tpl-special-level-input[data-bid="${bid}"]`);
-            if(specialInp){
-                if(mode==='demolish' && (parseInt(specialInp.value)||0)>0) specialInp.value='0';
-                else if(mode==='upgrade' && (parseInt(specialInp.value)||0)<=0) specialInp.value='1';
-            }
-            renderExecutionQueuePreview();
         });
-    });
-}
-
-function getTemplateSelections(){
-    const buildings={},modes={};
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{const bid=inp.dataset.bid;const lvl=parseInt(inp.value)||0;if(lvl>0)buildings[bid]=Math.min(lvl,getBuildingMaxLevel(bid));modes[bid]=getTemplateBuildingMode(bid);});
-    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{if(cell.dataset.selected==='1'){const inp=cell.querySelector('.tpl-special-level-input');const lvl=Math.min(1,Math.max(0,parseInt(inp?.value)||1));if(lvl>0)buildings[cell.dataset.bid]=lvl;modes[cell.dataset.bid]=getTemplateBuildingMode(cell.dataset.bid);}});
-    const researches={};
-    document.querySelectorAll('.tpl-research-cell').forEach(cell=>{if(cell.dataset.selected==='1')researches[cell.dataset.rid]=true;});
-    return {buildings,researches,modes};
-}
-
-function calculateTemplateRequirements(){
-    const {buildings,researches,modes}=getTemplateSelections();
-    // La table ci-dessus est également utilisée pour l'application réelle du template.
-    // On calcule donc exactement le même graphe de dépendances pour l'aperçu et la file.
-
-    const required=Object.assign({},buildings);
-    const visiting=new Set();
-    function ensureBuildingRequirement(bid,lvl){
-        const target=Number(lvl)||0;
-        if(!bid||target<=0) return;
-        const previous=Number(required[bid])||0;
-        // On ne reparcourt qu'une branche actuellement en cours de résolution.
-        // Une valeur déjà sélectionnée ne doit surtout pas empêcher la descente
-        // dans ses dépendances.
-        if(visiting.has(bid)) return;
-        visiting.add(bid);
-        getBuildingDependencies(bid).forEach(([reqBid,reqLvl])=>ensureBuildingRequirement(reqBid,reqLvl));
-        required[bid]=Math.max(previous,target);
-        visiting.delete(bid);
     }
-    Object.entries(buildings).forEach(([bid,lvl])=>{ if((modes[bid]||'upgrade')!=='demolish') ensureBuildingRequirement(bid,lvl); });
-    Object.keys(researches).forEach(rid=>ensureBuildingRequirement('academy',getResearchAcademyLevel(rid)));
-    return {buildings:required,researches};
-}
 
-function syncBuildingInputsToRequirements(){
-    const result=calculateTemplateRequirements();
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{
-        const bid=inp.dataset.bid,mode=getTemplateBuildingMode(bid);
-        const required=result.buildings[bid]||0,explicit=parseInt(inp.value)||0;
-        if(mode==='demolish'){
-            const finalLevel=Math.min(Math.max(explicit,0),getBuildingMaxLevel(bid));
-            if(parseInt(inp.value)!==finalLevel)inp.value=finalLevel;
-            inp.style.borderColor='#B74D52';
-            inp.title=`${getBuildingName(bid)} — niveau cible après démolition`;
-            return;
-        }
-        const finalLevel=Math.min(Math.max(explicit,required),getBuildingMaxLevel(bid));
-        if(parseInt(inp.value)!==finalLevel)inp.value=finalLevel;
-        const isAuto=required>explicit;
-        inp.style.borderColor=isAuto?'#66BB6A':'#8B6914';
-        inp.title=isAuto?`${getBuildingName(bid)} — requis automatiquement: ${required}`:getBuildingName(bid);
-    });
-}
+    function isModuleAllowed(moduleId) {
+        if (!userAccess || !userAccess.allowed) return false;
+        if (userAccess.modules.includes('*')) return true;
+        return userAccess.modules.includes(moduleId);
+    }
 
-function refreshTemplatePrerequisites(autoSync=false){
-    if(autoSync)syncBuildingInputsToRequirements();
-    const list=document.getElementById('tpl-prereq-list');if(!list)return;
-    const result=calculateTemplateRequirements(),selectedResearchIds=Object.keys(result.researches);
-    const currentLevels=getTownBuildingLevels(uw.Game.townId);
-    const rows=Object.entries(result.buildings).filter(([,lvl])=>lvl>0).sort((a,b)=>(a[0]==='academy'?0:1)-(b[0]==='academy'?0:1)||a[0].localeCompare(b[0])).map(([bid,lvl])=>{
-        const current=currentLevels[bid]||0,iconUrl=`https://gpfr.innogamescdn.com/images/game/main/${bid}.png`;
-        return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#D4AF37;">
-            <div style="width:32px;height:32px;border:1px solid ${current>=lvl?'#4CAF50':'#8B6914'};border-radius:3px;background:#1a1a14;overflow:hidden;flex-shrink:0;">
-                <div style="width:100%;height:100%;background:url(${iconUrl}) center/cover no-repeat;"></div>
+    function showAccessDenied() {
+        const playerName = getPlayerName();
+        const worldId = getWorldName();
+        const overlay = document.createElement('div');
+        overlay.className = 'access-denied-overlay';
+        overlay.innerHTML = `
+            <div class="access-denied-box">
+                <div style="font-size: 80px; margin-bottom: 20px;">🚫</div>
+                <h1 class="access-denied-title">ACCES NON AUTORISE</h1>
+                <p>
+                    Vous n'etes pas dans la whitelist pour utiliser ce bot.<br>
+                    Pour obtenir l'acces, veuillez faire une demande sur notre Discord.
+                </p>
+                <div class="access-denied-info">
+                    <p><span>👤 Joueur:</span> <strong>${playerName}</strong></p>
+                    <p><span>🌍 Serveur:</span> <strong>${worldId}</strong></p>
+                    <p style="color: var(--destructive); font-weight: bold; margin-top: 10px;">✕ Serveur ${worldId} non autorise</p>
+                </div>
+                <a href="${DISCORD_INVITE}" target="_blank" class="btn btn-discord" style="padding: 15px 30px; font-size: 16px; text-decoration: none;">
+                    Rejoindre le Discord
+                </a>
+                <div style="margin-top:25px; font-size:12px; color:var(--muted-foreground);">
+                    Grepolis Ultimate Bot V${VERSION} - Systeme de Whitelist
+                </div>
             </div>
-            <span style="min-width:95px;">${getBuildingName(bid)}</span><strong style="color:${current>=lvl?'#81C784':'#FFD700'};">niv. ${lvl}</strong>
-            <span style="margin-left:auto;color:${current>=lvl?'#81C784':'#BDBDBD'};">${current>=lvl?'OK':`à prévoir: ${lvl}`}</span>
-        </div>`;
-    });
-    const researchRows=selectedResearchIds.map(rid=>{const r={name:getResearchName(rid),academy:getResearchAcademyLevel(rid)};return `<div style="display:flex;align-items:center;gap:7px;font-size:10px;color:#D4AF37;">
-        <div class="research_icon research40x40 ${rid}" style="width:32px;height:32px;flex-shrink:0;"></div><span style="min-width:160px;">${r.name}</span><strong style="color:#FFD700;">Académie ${r.academy}</strong><span style="margin-left:auto;color:#BDBDBD;">Recherche sélectionnée</span>
-    </div>`;});
-    if(!rows.length&&!researchRows.length){list.innerHTML='<div style="font-size:10px;color:#8B8B83;font-style:italic;">Sélectionnez un bâtiment ou une recherche.</div>';return;}
-    list.innerHTML=(rows.length?'<div style="font-size:9px;color:#BDB76B;margin-bottom:2px;">Bâtiments nécessaires</div>':'')+rows.join('')+(researchRows.length?'<div style="font-size:9px;color:#BDB76B;margin-top:6px;margin-bottom:2px;">Recherches sélectionnées</div>'+researchRows.join(''):'');
-}
-
-function collectTemplateFromUI(){
-    const template={};
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{const bid=inp.dataset.bid,lvl=parseInt(inp.value)||0;if(lvl>0)template[bid]=Math.min(lvl,getBuildingMaxLevel(bid));});
-    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{if(cell.dataset.selected==='1'){const inp=cell.querySelector('.tpl-special-level-input');const lvl=Math.min(1,Math.max(0,parseInt(inp?.value)||1));if(lvl>0)template[cell.dataset.bid]=lvl;}});
-    document.querySelectorAll('.tpl-research-cell').forEach(cell=>{if(cell.dataset.selected==='1')template[RESEARCH_KEY_PREFIX+cell.dataset.rid]=1;});
-    const modes={};
-    Object.keys(template).forEach(k=>{if(k!=='__order__')modes[k]=getTemplateBuildingMode(k);});
-    const order=templateEditOrder.filter(k=>Object.prototype.hasOwnProperty.call(template,k));
-    Object.keys(template).forEach(k=>{if(k!=='__order__' && !order.includes(k))order.push(k);});
-    template.__order__=order;
-    template.__modes__=modes;
-    return template;
-}
-
-function loadTemplateIntoUI(template){
-    templateEditOrder=Array.isArray(template?.__order__) ? [...template.__order__] : [];
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{const bid=inp.dataset.bid;inp.value=template[inp.dataset.bid]||0;const mode=template?.__modes__?.[bid]||'upgrade';const sel=document.querySelector(`.tpl-mode-select[data-bid="${bid}"]`);if(sel)sel.value=mode;inp.style.color=mode==='demolish'?'#FF8A80':'#FFD700';});
-    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{const bid=cell.dataset.bid,selected=!!template[bid];cell.dataset.selected=selected?'1':'0';cell.querySelector('.tpl-special-icon').style.borderColor=selected?'#FFD700':'#4a4a3a';cell.querySelector('.tpl-special-icon div').style.opacity=selected?'1':'0.5';const inp=cell.querySelector('.tpl-special-level-input');if(inp)inp.value=selected?(template[bid]||1):0;const mode=template?.__modes__?.[bid]||'upgrade';const sel=cell.querySelector('.tpl-mode-select');if(sel)sel.value=mode;});
-    document.querySelectorAll('.tpl-research-cell').forEach(cell=>{const key=RESEARCH_KEY_PREFIX+cell.dataset.rid,selected=!!template[key]||!!template[cell.dataset.rid];cell.dataset.selected=selected?'1':'0';cell.style.opacity=selected?'1':'0.48';cell.style.borderColor=selected?'#FFD700':'#4a4a3a';});
-    refreshTemplatePrerequisites(true);
-    renderExecutionQueuePreview();
-}
-
-function resetCurrentTemplateUI(){
-    templateEditOrder=[];
-    document.querySelectorAll('.tpl-mode-select').forEach(sel=>sel.value='upgrade');
-    document.querySelectorAll('.tpl-level-input').forEach(inp=>{
-        inp.value=0;
-        inp.style.borderColor='#8B6914';
-        inp.title=getBuildingName(inp.dataset.bid);
-    });
-
-    document.querySelectorAll('.tpl-special-cell').forEach(cell=>{
-        cell.dataset.selected='0';
-        cell.querySelector('.tpl-special-icon').style.borderColor='#4a4a3a';
-        cell.querySelector('.tpl-special-icon div').style.opacity='0.5';
-        const inp=cell.querySelector('.tpl-special-level-input');if(inp)inp.value='0';
-    });
-
-    document.querySelectorAll('.tpl-research-cell').forEach(cell=>{
-        cell.dataset.selected='0';
-        cell.style.opacity='0.48';
-        cell.style.borderColor='#4a4a3a';
-    });
-
-    const nameInput=document.getElementById('tpl-name-input');
-    if(nameInput) nameInput.value='';
-    const select=document.getElementById('tpl-select');
-    if(select) select.value='';
-
-    refreshTemplatePrerequisites(false);
-    renderExecutionQueuePreview();
-    log('BUILD', 'Template en cours réinitialisé', 'info');
-}
-
-function saveTemplateFromUI() {
-    const nameInput = document.getElementById('tpl-name-input');
-    const name = nameInput.value.trim();
-    if (!name) { log('BUILD', 'Entrez un nom pour le template', 'error'); return; }
-
-    const template = collectTemplateFromUI();
-    if (Object.keys(template).filter(k=>k!=='__order__').length === 0) { log('BUILD', 'Le template est vide', 'error'); return; }
-
-    buildData.templates[name] = template;
-    saveData();
-    refreshTemplateSelect(name);
-    log('BUILD', `Template "${name}" enregistre (${Object.keys(template).length} batiments)`, 'success');
-}
-
-function refreshTemplateSelect(selectName) {
-    const sel = document.getElementById('tpl-select');
-    if (!sel) return;
-    const names = Object.keys(buildData.templates || {});
-    sel.innerHTML = '<option value="">-- Choisir un template --</option>' +
-        names.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
-    if (selectName && names.includes(selectName)) sel.value = selectName;
-}
-
-// Lit les niveaux actuels des batiments d'une ville via l'API du jeu.
-function getTownBuildingLevels(tid) {
-    try {
-        const town = uw.ITowns.getTown(tid);
-        if (!town || !town.getBuildings) return {};
-        return Object.assign({}, town.getBuildings().getBuildings());
-    } catch (e) {
-        log('BUILD', `Impossible de lire les niveaux de batiments: ${e.message}`, 'error');
-        return {};
+        `;
+        document.body.appendChild(overlay);
     }
-}
 
-// Calcule les niveaux "projetes" d'une ville : niveau reel + constructions en cours + file auto-build.
-function computeProjectedLevels(tid) {
-    const levels = getTownBuildingLevels(tid);
-    try {
-        const town = uw.ITowns.getTown(tid);
-        if (town) {
-            town.buildingOrders().forEach(o => {
-                const bid = (typeof o.getBuildingId === 'function') ? o.getBuildingId() : o.attributes.building_id;
-                levels[bid] = (levels[bid] || 0) + 1;
+    function createUI() {
+        const btn = document.createElement('div');
+        btn.className = 'ultimate-bot-btn';
+        btn.id = 'ultimate-bot-btn';
+        btn.innerHTML = 'Ultimate<br>Bot';
+        btn.onclick = () => togglePanel();
+        document.body.appendChild(btn);
+
+        const panel = document.createElement('div');
+        panel.className = 'ultimate-panel';
+        panel.id = 'ultimate-panel';
+
+        const tabsHtml = TABS_CONFIG.map(tab => {
+            let classes = 'ultimate-tab';
+            if (tab.id === 'info') classes += ' active';
+            if (tab.disabled) classes += ' disabled';
+            else if (!isModuleAllowed(tab.id) && tab.id !== 'settings') classes += ' locked';
+            return `<button class="${classes}" data-tab="${tab.id}">
+                <span class="tab-icon">${tab.icon}</span>${tab.name}
+            </button>`;
+        }).join('');
+
+        const contentsHtml = TABS_CONFIG.map(tab => 
+            `<div class="tab-content${tab.id === 'info' ? ' active' : ''}" id="tab-${tab.id}">
+                <div style="text-align:center; padding:60px 20px; color:var(--muted-foreground);">⏳ Chargement...</div>
+            </div>`
+        ).join('');
+
+        panel.innerHTML = `
+            <div class="ultimate-header">
+                <div class="ultimate-title">
+                    <span>Ultimate Bot</span>
+                    <span class="ultimate-version">V${VERSION}</span>
+                </div>
+                <button class="ultimate-close" id="ultimate-close">X</button>
+            </div>
+            <div class="ultimate-tabs">${tabsHtml}</div>
+            <div class="ultimate-main">
+                <div class="ultimate-body">${contentsHtml}</div>
+                <div class="ultimate-console">
+                    <div class="console-header"><span>📜</span> Console</div>
+                    <div class="console-content" id="console-logs"><div class="logs-empty" style="text-align:center; color:var(--muted-foreground); padding:20px; font-style:italic;">Aucune activite</div></div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(panel);
+
+        document.getElementById('ultimate-close').onclick = () => togglePanel();
+
+        document.querySelectorAll('.ultimate-tab').forEach(tab => {
+            tab.onclick = () => {
+                if (tab.classList.contains('disabled')) return;
+                const tabId = tab.dataset.tab;
+                const tabConfig = TABS_CONFIG.find(t => t.id === tabId);
+                if (tab.classList.contains('locked')) {
+                    document.querySelectorAll('.ultimate-tab').forEach(t => t.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    tab.classList.add('active');
+                    const content = document.getElementById(`tab-${tabId}`);
+                    content.classList.add('active');
+                    content.innerHTML = `
+                        <div class="locked-module-container">
+                            <div style="font-size:60px; margin-bottom:15px; opacity:0.6;">🔒</div>
+                            <div class="locked-module-title">Module Verrouille</div>
+                            <div style="color:var(--muted-foreground);">
+                                Vous n'avez pas acces a ce module.<br>
+                                Contactez l'administrateur sur Discord pour debloquer.
+                            </div>
+                            <a href="${DISCORD_INVITE}" target="_blank" class="btn btn-discord" style="margin-top:20px; text-decoration:none;">
+                                Rejoindre le Discord
+                            </a>
+                        </div>
+                    `;
+                    currentTab = tabId;
+                    return;
+                }
+                document.querySelectorAll('.ultimate-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(`tab-${tabId}`).classList.add('active');
+                currentTab = tabId;
+                loadTab(tabConfig);
+            };
+        });
+
+        const firstAllowedTab = TABS_CONFIG.find(t => !t.disabled && isModuleAllowed(t.id));
+        if (firstAllowedTab) {
+            loadTab(firstAllowedTab);
+        }
+
+        initDraggable(panel);
+        preloadAllTabs();
+        log('SYSTEM', 'Interface chargee', 'success');
+        log('SYSTEM', `Bienvenue ${getPlayerName()}!`, 'info');
+    }
+
+    function initDraggable(panel) {
+        const header = panel.querySelector('.ultimate-header');
+        let isDragging = false;
+        let startX, startY, startLeft, startTop;
+        let hasMoved = false;
+
+        header.addEventListener('mousedown', function(e) {
+            if (e.target.closest('.ultimate-close')) return;
+            isDragging = true;
+            hasMoved = false;
+            const rect = panel.getBoundingClientRect();
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeft = rect.left;
+            startTop = rect.top;
+            panel.classList.add('dragging');
+            panel.style.transform = 'none';
+            panel.style.left = startLeft + 'px';
+            panel.style.top = startTop + 'px';
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+            if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+                hasMoved = true;
+            }
+            let newLeft = startLeft + deltaX;
+            let newTop = startTop + deltaY;
+            const maxLeft = window.innerWidth - panel.offsetWidth;
+            const maxTop = window.innerHeight - panel.offsetHeight;
+            newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+            newTop = Math.max(0, Math.min(newTop, maxTop));
+            panel.style.left = newLeft + 'px';
+            panel.style.top = newTop + 'px';
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (isDragging) {
+                isDragging = false;
+                panel.classList.remove('dragging');
+            }
+        });
+    }
+
+    function preloadAllTabs() {
+        log('SYSTEM', 'Prechargement des modules...', 'info');
+        let loadIndex = 0;
+        const tabsToLoad = TABS_CONFIG.filter(t => !t.disabled && isModuleAllowed(t.id) && t.id !== currentTab);
+        function loadNextTab() {
+            if (loadIndex >= tabsToLoad.length) {
+                log('SYSTEM', 'Tous les modules precharges', 'success');
+                return;
+            }
+            const tab = tabsToLoad[loadIndex];
+            loadIndex++;
+            if (loadedTabs[tab.id]) {
+                loadNextTab();
+                return;
+            }
+            const scriptUrl = `${BASE_URL}/${tab.script}?v=${Date.now()}`;
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: scriptUrl,
+                onload: function(response) {
+                    if (response.status === 200) {
+                        try {
+                            const tabModule = {
+                                uw: uw,
+                                log: log,
+                                getPlayerName: getPlayerName,
+                                getWorldName: getWorldName,
+                                GM_getValue: GM_getValue,
+                                GM_setValue: GM_setValue,
+                                GM_addStyle: GM_addStyle,
+                                GM_xmlhttpRequest: GM_xmlhttpRequest
+                            };
+                            const executeTab = new Function('module', response.responseText);
+                            executeTab(tabModule);
+                            loadedTabs[tab.id] = tabModule;
+                            const content = document.getElementById(`tab-${tab.id}`);
+                            if (content && tabModule.render) {
+                                content.innerHTML = '';
+                                tabModule.render(content);
+                                if (tabModule.init) {
+                                    tabModule.init();
+                                }
+                            }
+                        } catch (e) {
+                            console.error(`[GU] Erreur preload "${tab.name}":`, e);
+                        }
+                    }
+                    setTimeout(loadNextTab, 100);
+                },
+                onerror: function() {
+                    setTimeout(loadNextTab, 100);
+                }
             });
         }
-    } catch (e) {}
-    (buildData.queues[tid] || []).forEach(it => {
-        levels[it.buildingId] = (levels[it.buildingId] || 0) + 1;
-    });
-    return levels;
-}
+        setTimeout(loadNextTab, 500);
+    }
 
-// Applique un template a la ville actuellement selectionnee : calcule tous les niveaux
-// manquants (batiment cible + tous ses prerequis en cascade) et les ajoute a la file dans
-// le bon ordre de dependance.
-function getTownResearchState(tid){
-    try{
-        const attrs=uw.MM?.getModelsForClass?.('Researches')?.[tid]?.attributes;
-        if(attrs)return Object.assign({},attrs);
-        const town=uw.ITowns.getTown(tid), c=town?.getResearches?.();
-        if(c?.attributes)return Object.assign({},c.attributes);
-        return {};
-    }catch(e){log('BUILD',`Impossible de lire les recherches: ${e.message}`,'error');return {};}
-}
-function queueResearch(tid,rid){if(!buildData.researchQueues[tid])buildData.researchQueues[tid]=[];if(!buildData.researchQueues[tid].includes(rid))buildData.researchQueues[tid].push(rid);}
-function processAllResearchQueues(){for(const tid in (buildData.researchQueues||{}))if(buildData.researchQueues.hasOwnProperty(tid))processTownResearchQueue(tid);}
-async function processTownResearchQueue(tid){
-    const queue=(buildData.researchQueues&&buildData.researchQueues[tid])||[];
-    if(!queue.length || !buildData.enabled)return;
-    const town=uw.ITowns.getTown(tid);if(!town)return;
-    if(!(await switchToTownHumanized(tid))) return;
-    const researched=getTownResearchState(tid);
-    while(queue.length&&researched[queue[0]]===true)queue.shift();
-    if(!queue.length){saveData();return;}
-    const rid=queue[0],academy=(town.getBuildings&&town.getBuildings().getBuildings())?.academy||0;
-    if(academy<getResearchAcademyLevel(rid))return;
-    try{
-        await sleep(humanActionDelay());
-        if(uw.AcademyWindowFactory?.openAcademyWindow){
-            uw.AcademyWindowFactory.openAcademyWindow();
-            await sleep(randomDelay(buildData.settings.humanizer===false?400:900,buildData.settings.humanizer===false?800:1800));
-        }
-        const selectors=[`div[data-research_id*="${rid}"]`,`[data-research_id="${rid}"]`,`.research_icon.research.${rid}`,`.research_technology.${rid}`,`.research.${rid}`];
-        let $candidate=null;
-        for(const sel of selectors){const $el=uw.$(sel).filter(':visible');if($el&&$el.length){$candidate=$el.first();break;}}
-        if(!$candidate||!$candidate.length)return;
-        const $button=$candidate.closest('button,.btn,.research_technology,.research').first();
-        ($button.length?$button:$candidate).click();
-        await sleep(buildData.settings.humanizer===false?700:randomDelay(900,1800));
-        const after=getTownResearchState(tid);
-        if(after[rid]===true){queue.shift();saveData();updateStats();log('BUILD',`${town.getName?.()||tid}: recherche ${getResearchName(rid)} lancee`,'success');}
-    }catch(e){log('BUILD',`${town.getName?.()||tid}: impossible de lancer ${getResearchName(rid)}: ${e.message}`,'error');}
-}
+    function togglePanel() {
+        panelOpen = !panelOpen;
+        document.getElementById('ultimate-panel').classList.toggle('open', panelOpen);
+    }
 
-function applyTemplateToTown(templateName){
-    const template=buildData.templates[templateName];
-    if(!template){log('BUILD',`Template "${templateName}" introuvable`,'error');return;}
-    const tid=uw.Game.townId;
-    if(!buildData.actionQueues) buildData.actionQueues={};
-    const plan=queuePlanForTown(tid,template);
-    if(!buildData.activeTemplates) buildData.activeTemplates={};
-    buildData.activeTemplates[String(tid)]=templateName;
-    buildData.actionQueues[tid]=plan;
-    // Compatibilité avec l'ancienne file : on la reconstruit à partir du plan.
-    buildData.queues[tid]=(plan.filter(a=>a.type==='building')).map(a=>({buildingId:a.buildingId,level:a.level}));
-    buildData.researchQueues[tid]=(plan.filter(a=>a.type==='research')).map(a=>a.rid);
-    saveData();
-    lastTemplateUiTownId=null;
-    syncTemplateUIForCurrentTown(true);
-    renderExecutionQueuePreview();
-    updateStats(); updateQueueDisplay(); injectSenateQueue(); refreshSenateQueue();
-    if(!plan.length){log('BUILD',`Template "${templateName}": aucune action à exécuter`,'info');return;}
-    log('BUILD',`Template "${templateName}" chargé : ${plan.length} action(s) dans l'ordre exact`,'success');
-    if(buildData.enabled) processAllQueues();
-}
-
-// ============================================================================
-
-function startTimer() {
-    setInterval(() => {
-        const el = document.getElementById('build-timer');
-        if (!el) return;
-        
-        if (!buildData.enabled) {
-            el.textContent = 'PAUSE';
+    function loadTab(tab) {
+        if (!tab || tab.disabled) return;
+        if (!isModuleAllowed(tab.id) && tab.id !== 'settings') return;
+        const content = document.getElementById(`tab-${tab.id}`);
+        if (!content) return;
+        if (loadedTabs[tab.id]) {
+            if (loadedTabs[tab.id].onActivate) {
+                loadedTabs[tab.id].onActivate(content);
+            }
             return;
         }
-
-        const diff = buildData.nextCheckTime - Date.now();
-        if (diff <= 0) {
-            processAllQueues();
-            buildData.nextCheckTime = Date.now() + buildData.settings.interval * 60000;
-        }
-        
-        const m = Math.max(0, Math.floor(diff / 60000)).toString().padStart(2, '0');
-        const s = Math.max(0, Math.floor((diff % 60000) / 1000)).toString().padStart(2, '0');
-        el.textContent = `${m}:${s}`;
-    }, 1000);
-}
-
-function updateStats() {
-    const b = document.getElementById('build-stat-built');
-    const q = document.getElementById('build-stat-queued');
-    const g = document.getElementById('build-stat-gratis');
-    
-    if (b) b.textContent = buildData.stats.built;
-    if (q) { const a=Object.values(buildData.actionQueues||{}).reduce((x,q)=>x+q.length,0); q.textContent=a; }
-    if (g) g.textContent = buildData.stats.gratisClaimed;
-}
-
-function saveData() {
-    GM_setValue('gu_build_data', JSON.stringify({
-        enabled: buildData.enabled,
-        gratisEnabled: buildData.gratisEnabled,
-        settings: buildData.settings,
-        stats: buildData.stats,
-        queues: buildData.queues,
-        researchQueues: buildData.researchQueues || {},
-        actionQueues: buildData.actionQueues || {},
-        activeTemplates: buildData.activeTemplates || {},
-        templates: buildData.templates
-    }));
-}
-
-function loadData() {
-    const saved = GM_getValue('gu_build_data');
-    if (saved) {
-        try {
-            const d = JSON.parse(saved);
-            buildData = { ...buildData, ...d };
-            if (!buildData.templates) buildData.templates = {};
-            if (!buildData.researchQueues) buildData.researchQueues = {};
-            if (!buildData.actionQueues) buildData.actionQueues = {};
-            if (!buildData.activeTemplates) buildData.activeTemplates = {};
-            buildData.settings = { interval: 10, webhook: '', humanizer: true, humanizerMinDelay: 1000, humanizerMaxDelay: 2000, humanizerTownMinDelay: 1200, humanizerTownMaxDelay: 2400, ...(buildData.settings||{}) };
-            const allowedIntervals=[5,10,20,40];
-            if(!allowedIntervals.includes(Number(buildData.settings.interval))) buildData.settings.interval=10;
-            Object.values(buildData.templates).forEach(t=>Object.keys(t||{}).forEach(k=>{if((RESEARCH_FALLBACK[k]||getResearchData(k))&&!k.startsWith(RESEARCH_KEY_PREFIX)){t[RESEARCH_KEY_PREFIX+k]=t[k];delete t[k];}}));
-        } catch(e) {}
+        content.innerHTML = '<div style="text-align:center; padding:60px 20px; color:var(--muted-foreground);">⏳ Chargement...</div>';
+        const scriptUrl = `${BASE_URL}/${tab.script}?v=${Date.now()}`;
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: scriptUrl,
+            onload: function(response) {
+                if (response.status === 200) {
+                    try {
+                        const tabModule = {
+                            uw: uw,
+                            log: log,
+                            getPlayerName: getPlayerName,
+                            getWorldName: getWorldName,
+                            GM_getValue: GM_getValue,
+                            GM_setValue: GM_setValue,
+                            GM_addStyle: GM_addStyle,
+                            GM_xmlhttpRequest: GM_xmlhttpRequest
+                        };
+                        const executeTab = new Function('module', response.responseText);
+                        executeTab(tabModule);
+                        loadedTabs[tab.id] = tabModule;
+                        if (currentTab === tab.id && tabModule.render) {
+                            content.innerHTML = '';
+                            tabModule.render(content);
+                            if (tabModule.init) {
+                                tabModule.init();
+                            }
+                        }
+                        log('SYSTEM', `Onglet "${tab.name}" charge`, 'success');
+                    } catch (e) {
+                        content.innerHTML = `<div style="text-align:center; color:var(--destructive); padding:20px;">Erreur: ${e.message}</div>`;
+                        log('SYSTEM', `Erreur onglet "${tab.name}": ${e.message}`, 'error');
+                        console.error(`[GU] Erreur onglet "${tab.name}":`, e);
+                    }
+                } else {
+                    content.innerHTML = `<div style="text-align:center; padding:60px; color:var(--muted-foreground);">🚧 Module non disponible</div>`;
+                }
+            },
+            onerror: function() {
+                content.innerHTML = `<div style="text-align:center; padding:60px; color:var(--destructive);">🚧 Erreur de connexion</div>`;
+                log('SYSTEM', `Erreur reseau: ${tab.name}`, 'error');
+            }
+        });
     }
-}
+
+    window.GrepolisUltimate = {
+        loadedTabs,
+        log,
+        uw,
+        userAccess,
+        reloadTab: function(tabId) {
+            delete loadedTabs[tabId];
+            const tab = TABS_CONFIG.find(t => t.id === tabId);
+            if (tab) loadTab(tab);
+        },
+        getTabModule: function(tabId) {
+            return loadedTabs[tabId];
+        },
+        isModuleAllowed: isModuleAllowed,
+        updateButtonState: function() {
+            const btn = document.getElementById('ultimate-bot-btn');
+            if (!btn) return;
+            let hasActive = false;
+            for (const tabId in loadedTabs) {
+                if (loadedTabs[tabId].isActive && loadedTabs[tabId].isActive()) {
+                    hasActive = true;
+                    break;
+                }
+            }
+            if (hasActive) btn.classList.add('has-active');
+            else btn.classList.remove('has-active');
+        }
+    };
+
+    const initCheck = setInterval(() => {
+        if (typeof uw.Game !== 'undefined' && uw.ITowns && uw.ITowns.getCurrentTown()) {
+            clearInterval(initCheck);
+            checkWhitelist(function(allowed) {
+                if (allowed) {
+                    createUI();
+                } else {
+                    showAccessDenied();
+                }
+            });
+        }
+    }, 1000);
+
+    console.log('%c[Grepolis Ultimate]%c Main.js V' + VERSION + ' charge', 'color: #4caf50; font-weight: bold;', 'color: inherit;');
+})();
