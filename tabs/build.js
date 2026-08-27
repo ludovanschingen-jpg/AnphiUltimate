@@ -1,12 +1,4 @@
-// Builder revision 2026-08-26 — bâtiments actuels + prérequis visuels + recherches
-// Corrections appliquées :
-//  1) processAllQueues : chaque ville est désormais traitée dans un try/catch
-//     dédié pour qu'une exception inattendue sur une ville ne bloque plus
-//     le passage aux villes suivantes dans la même routine.
-//  2) processTownActionQueue : ajout de hasPendingBuildingOrder() pour
-//     distinguer une recherche "juste en attente" (Académie déjà en
-//     construction) d'une recherche réellement bloquée (aucune construction
-//     d'Académie en cours) qui doit désormais faire passer à la ville suivante.
+// Builder revision 2026-08-25 — bâtiments actuels + prérequis visuels + recherches
 const uw = module.uw;
 const log = module.log;
 const GM_getValue = module.GM_getValue;
@@ -334,15 +326,6 @@ module.render = function(container) {
                         🗑️
                     </button>
                 </div>
-                <div style="margin-top:8px;">
-                    <button id="tpl-apply-all-btn"
-                        style="width:100%; background:linear-gradient(145deg,#9575CD,#4A2E7A); border:1px solid #D1C4E9; color:#F5F0FF; font-weight:bold; padding:8px 12px; border-radius:4px; cursor:pointer; font-size:11px;">
-                        🌍 Appliquer a TOUTES mes villes
-                    </button>
-                    <div style="font-size:9px;color:#8B8B83;margin-top:4px;text-align:center;">
-                        Applique le template selectionne a chacune de vos villes (chacune reçoit son propre plan calcule selon ses niveaux actuels).
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -517,12 +500,6 @@ module.init = function() {
         if (!name) { log('BUILD', 'Selectionnez un template a appliquer', 'error'); return; }
         applyTemplateToTown(name);
     };
-    document.getElementById('tpl-apply-all-btn').onclick = () => {
-        const sel = document.getElementById('tpl-select');
-        const name = sel.value;
-        if (!name) { log('BUILD', 'Selectionnez un template a appliquer', 'error'); return; }
-        applyTemplateToAllTowns(name);
-    };
     document.getElementById('tpl-reset-btn').onclick = resetCurrentTemplateUI;
     document.getElementById('tpl-select').onchange = (e) => {
         const name = e.target.value;
@@ -694,22 +671,6 @@ function humanTownDelay(){
     return buildData.settings.humanizer===false ? 700 : randomDelay(buildData.settings.humanizerTownMinDelay||2500,buildData.settings.humanizerTownMaxDelay||4500);
 }
 
-// Liste déterministe de TOUTES les villes possédées, triée par ID de ville
-// croissant. On ne dépend plus d'un "groupe de villes actif" côté jeu (filtre
-// qui peut être vide, mal défini, ou changer d'ordre d'une routine à l'autre) :
-// la ville "numéro 1" est toujours la même, peu importe son nom, et l'ordre
-// est stable d'une routine à l'autre.
-function getAllOwnedTownIds(){
-    const towns=uw.ITowns?.getTowns?.()||{};
-    return Object.values(towns)
-        .map(t=>String(t.id))
-        .filter(id=>id && id!=='undefined' && id!=='null')
-        .sort((a,b)=>Number(a)-Number(b));
-}
-
-// Conservée pour compatibilité : utilisée uniquement si un groupe de villes
-// actif existe réellement côté jeu. La routine principale (processAllQueues)
-// n'en dépend plus — voir getAllOwnedTownIds().
 function getSelectedTownGroupIds(){
     try{
         const groups=uw.MM?.getCollections?.()?.TownGroup;
@@ -727,11 +688,12 @@ function getSelectedTownGroupIds(){
             }
         }
     }catch(e){ log('BUILD',`Impossible de lire le groupe de villes actif: ${e.message}`,'info'); }
-    return getAllOwnedTownIds();
+    const towns=uw.ITowns?.getTowns?.()||{};
+    return Object.values(towns).map(t=>String(t.id));
 }
 
 function getQueuedTownIds(){
-    const ids=getAllOwnedTownIds();
+    const ids=getSelectedTownGroupIds();
     return ids.filter(tid=>buildData.queues[tid]?.length || buildData.researchQueues?.[tid]?.length || buildData.actionQueues?.[tid]?.length);
 }
 
@@ -754,44 +716,45 @@ function syncTemplateUIForCurrentTown(force=false){
 }
 
 async function switchToTownHumanized(tid){
-    tid=String(tid);
-    if(String(uw.Game && uw.Game.townId || '')===tid){
+    tid=Number(tid);
+    const current=Number(uw.Game?.townId);
+    if(Number.isFinite(tid) && current===tid){
         try{ syncTemplateUIForCurrentTown(true); }catch(e){}
         return true;
     }
+
+    if(!Number.isFinite(tid) || tid<=0){
+        log('BUILD',`ID de ville invalide: ${tid}`,'error');
+        return false;
+    }
+
     try{
-        if(uw.HelperTown && typeof uw.HelperTown.townSwitch==='function'){
-            await uw.HelperTown.townSwitch(Number(tid));
-        }else if(uw.HelperTown && typeof uw.HelperTown.switchToTown==='function'){
-            await uw.HelperTown.switchToTown(Number(tid));
-        }else if(uw.ITowns && typeof uw.ITowns.setCurrentTown==='function'){
-            uw.ITowns.setCurrentTown(Number(tid));
-        }else{
-            log('BUILD', 'Aucune méthode de changement de ville disponible', 'error');
+        // IMPORTANT : même mécanisme que GrepoAuto/GrepolisInjected.
+        // HelperTown.townSwitch() ne retourne pas nécessairement une Promise :
+        // on l'appelle puis on attend explicitement le changement de Game.townId.
+        if(!(uw.HelperTown && typeof uw.HelperTown.townSwitch==='function')){
+            log('BUILD','HelperTown.townSwitch indisponible : impossible de changer de ville','error');
             return false;
         }
 
-        const deadline=Date.now()+7000;
+        log('BUILD',`Changement de ville ${current||'?'} → ${tid}`,'info');
+        uw.HelperTown.townSwitch(tid);
+
+        // GrepoAuto utilise le même principe : appel direct puis attente.
+        const deadline=Date.now()+5000;
         while(Date.now()<deadline){
-            const gameTown=String(uw.Game && uw.Game.townId || '');
-            const currentTown=uw.ITowns && typeof uw.ITowns.getCurrentTown==='function' ? uw.ITowns.getCurrentTown() : null;
-            const currentId=currentTown && currentTown.id!==undefined ? String(currentTown.id) : '';
-            if(gameTown===tid || currentId===tid){
-                if(gameTown!==tid && uw.ITowns && typeof uw.ITowns.setCurrentTown==='function'){
-                    try{ uw.ITowns.setCurrentTown(Number(tid)); }catch(e){}
-                    await sleep(150);
-                }
-                if(String(uw.Game && uw.Game.townId || '')===tid){
-                    await sleep(humanTownDelay());
-                    try{ syncTemplateUIForCurrentTown(true); }catch(e){}
-                    return true;
-                }
+            if(Number(uw.Game?.townId)===tid){
+                await sleep(humanTownDelay());
+                try{ syncTemplateUIForCurrentTown(true); }catch(e){}
+                log('BUILD',`Ville ${tid} confirmée`,'success');
+                return true;
             }
-            await sleep(150);
+            await sleep(200);
         }
-        log('BUILD', 'Changement vers la ville '+tid+' non confirme (ville actuelle: '+String(uw.Game && uw.Game.townId || 'inconnue')+')', 'error');
+
+        log('BUILD',`Changement de ville ${current||'?'} → ${tid} non confirmé (ville actuelle: ${uw.Game?.townId||'inconnue'})`,'error');
     }catch(e){
-        log('BUILD', 'Impossible de passer a la ville '+tid+': '+e.message, 'error');
+        log('BUILD',`Erreur changement de ville ${tid}: ${e.message}`,'error');
     }
     return false;
 }
@@ -983,38 +946,53 @@ function openSenateWindowHumanized(){
     return false;
 }
 
-// Ouvre systématiquement le Sénat (fenêtre gauche) puis l'Académie (fenêtre
-// droite) pour la ville donnée, avant tout traitement de la file. C'est une
-// étape obligatoire de chaque prise en charge de ville : le template n'est
-// appliqué/tenté qu'une fois ces deux fenêtres ouvertes.
 async function openTownControlPagesHumanized(tid){
     if(!(await switchToTownHumanized(tid))) return false;
-    const townLabel=uw.ITowns.getTown(tid)?.getName?.()||tid;
-
     await sleep(humanActionDelay());
-    const senateOpened=openSenateWindowHumanized();
-    log('BUILD',`${townLabel}: ${senateOpened?'Senat ouvert':'ouverture du Senat impossible'}`,'info');
+    openSenateWindowHumanized();
     await sleep(randomDelay(buildData.settings.humanizer===false?200:300,buildData.settings.humanizer===false?450:650));
-
-    let academyOpened=false;
     if(uw.AcademyWindowFactory?.openAcademyWindow){
-        try{
-            uw.AcademyWindowFactory.openAcademyWindow();
-            academyOpened=true;
-            await sleep(randomDelay(buildData.settings.humanizer===false?200:300,buildData.settings.humanizer===false?450:650));
-        }catch(e){
-            log('BUILD',`${townLabel}: erreur ouverture Academie: ${e.message}`,'info');
-        }
+        try{ uw.AcademyWindowFactory.openAcademyWindow(); await sleep(randomDelay(buildData.settings.humanizer===false?200:300,buildData.settings.humanizer===false?450:650)); }catch(e){}
     }
-    log('BUILD',`${townLabel}: ${academyOpened?'Academie ouverte':'ouverture de l\'Academie impossible'}`,'info');
-
     return true;
 }
 
-// Vérifie si un bâtiment donné possède un ordre de construction en cours dans
-// une ville. Sert à distinguer une recherche "en attente d'une construction
-// déjà lancée" (l'Académie monte, il suffit de patienter) d'une recherche
-// réellement bloquée (rien n'est en cours pour combler le prérequis).
+async function processAllQueues(){
+    if(processingAllQueues || !buildData.enabled) return;
+    processingAllQueues=true;
+    routineBlockedTowns=new Set();
+    try{
+        const towns=getSelectedTownGroupIds().map(String);
+        const active=buildData.activeTemplates||{};
+        for(const tid of towns){
+            if(!buildData.enabled) break;
+            if(routineBlockedTowns.has(String(tid))) continue;
+            const q=buildData.actionQueues?.[tid]||[];
+            const templateName=active[String(tid)];
+            if(!q.length && templateName && buildData.templates?.[templateName]){
+                buildData.actionQueues[tid]=queuePlanForTown(tid,buildData.templates[templateName]);
+                buildData.queues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='building').map(a=>({buildingId:a.buildingId,level:a.level}));
+                buildData.researchQueues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='research').map(a=>a.rid);
+                saveData();
+            }
+            if((buildData.actionQueues?.[tid]||[]).length){
+                let result;
+                try{
+                    result=await processTownActionQueue(tid);
+                }catch(e){
+                    log('BUILD', `${uw.ITowns.getTown(tid)?.getName?.()||tid}: erreur inattendue (${e.message}) → passage à la ville suivante`, 'error');
+                    result={blocked:true, reason:'exception: '+e.message};
+                }
+                if(result?.blocked){
+                    routineBlockedTowns.add(String(tid));
+                    log('BUILD',`${uw.ITowns.getTown(tid)?.getName?.()||tid}: passage a la ville suivante (${result.reason})`,'info');
+                }
+                if(buildData.enabled) await sleep(humanTownDelay());
+            }
+        }
+    }finally{processingAllQueues=false;processingTownId=null;}
+}
+
 function hasPendingBuildingOrder(tid, bid) {
     try {
         const town = uw.ITowns.getTown(tid);
@@ -1026,75 +1004,6 @@ function hasPendingBuildingOrder(tid, bid) {
     } catch (e) {
         return false;
     }
-}
-
-// Routine principale : parcourt TOUTES les villes possédées, toujours dans le
-// même ordre déterministe (ville n°1 = premier ID trié, peu importe son nom),
-// et traite chacune jusqu'à un blocage réel (plus de ressources, plus de place
-// dans la file, ou recherche impossible sans construction en cours) avant de
-// passer à la suivante.
-async function processAllQueues(){
-    if(processingAllQueues || !buildData.enabled) return;
-    processingAllQueues=true;
-    routineBlockedTowns=new Set();
-    try{
-        const towns=getAllOwnedTownIds();
-        const active=buildData.activeTemplates||{};
-        log('BUILD',`Nouvelle routine : ${towns.length} ville(s) a traiter dans l'ordre`,'info');
-
-        for(const tid of towns){
-            if(!buildData.enabled) break;
-            if(routineBlockedTowns.has(String(tid))) continue;
-
-            const townLabel=uw.ITowns.getTown(tid)?.getName?.()||tid;
-
-            // On (re)calcule le plan d'actions à partir du template actif de
-            // cette ville UNIQUEMENT si la file est vide. Une file déjà
-            // partiellement traitée n'est jamais écrasée.
-            const templateName=active[String(tid)];
-            let q=buildData.actionQueues?.[tid]||[];
-            if(!q.length && templateName && buildData.templates?.[templateName]){
-                buildData.actionQueues[tid]=queuePlanForTown(tid,buildData.templates[templateName]);
-                buildData.queues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='building').map(a=>({buildingId:a.buildingId,level:a.level}));
-                buildData.researchQueues[tid]=(buildData.actionQueues[tid]||[]).filter(a=>a.type==='research').map(a=>a.rid);
-                saveData();
-                q=buildData.actionQueues[tid]||[];
-            }
-
-            if(!q.length){
-                // Rien à faire pour cette ville (pas de template actif ou file
-                // déjà entièrement traitée) : on passe directement à la suivante.
-                log('BUILD',`${townLabel}: ignoree (${templateName?'template "'+templateName+'" deja termine':'aucun template actif — utilisez "Appliquer a TOUTES mes villes"'})`,'info');
-                continue;
-            }
-
-            log('BUILD',`${townLabel}: debut du traitement (${q.length} action(s) en file)`,'info');
-
-            // Chaque ville est isolée dans son propre try/catch. Avant, une
-            // exception inattendue (sélecteur DOM manquant, propriété
-            // undefined, etc.) sur UNE ville arrêtait toute la boucle "for" et
-            // empêchait le passage aux villes suivantes, y compris lors des
-            // routines ultérieures (même ville rebloquée en premier à chaque fois).
-            let result;
-            try{
-                result=await processTownActionQueue(tid);
-            }catch(e){
-                log('BUILD', `${townLabel}: erreur inattendue (${e.message}) → passage à la ville suivante`, 'error');
-                result={blocked:true, reason:'exception: '+e.message};
-            }
-
-            if(result?.blocked){
-                routineBlockedTowns.add(String(tid));
-                log('BUILD',`${townLabel}: passage a la ville suivante (${result.reason})`,'info');
-            } else {
-                log('BUILD',`${townLabel}: file terminee pour cette routine`,'info');
-            }
-
-            if(buildData.enabled) await sleep(humanTownDelay());
-        }
-
-        log('BUILD','Routine terminee, en attente du prochain cycle','info');
-    }finally{processingAllQueues=false;processingTownId=null;}
 }
 
 async function processTownActionQueue(tid){
@@ -1174,19 +1083,12 @@ async function processTownActionQueue(tid){
             const neededAcademy=getResearchAcademyLevel(action.rid);
 
             if(academy<neededAcademy){
-                // Correctif : on ne se contente plus de "sauter" la recherche
-                // aveuglément. On vérifie si l'Académie est réellement en
-                // cours de construction dans cette ville.
                 if(hasPendingBuildingOrder(tid,'academy')){
-                    // L'Académie monte déjà : simple attente, pas un blocage réel.
                     skippedResearchIds.add(String(action.rid));
                     log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} en attente (Académie ${academy}/${neededAcademy} — construction en cours) → tentative des actions suivantes`,'info');
                     continue;
                 }
-                // Aucun ordre de construction d'Académie en cours : le prérequis
-                // ne pourra pas se résoudre tout seul (ressources insuffisantes,
-                // file pleine, prérequis manquant pour l'Académie elle-même...).
-                // On considère la ville comme réellement bloquée et on passe à la suivante.
+
                 log('BUILD',`${town.getName?.()||tid}: ${getResearchName(action.rid)} impossible (Académie ${academy}/${neededAcademy}, aucune construction en cours) → passage à la ville suivante`,'info');
                 saveData(); updateQueueDisplay(); refreshSenateQueue();
                 return {blocked:true, reason:'recherche bloquée: Académie insuffisante et aucune construction en cours'};
@@ -1790,43 +1692,6 @@ function applyTemplateToTown(templateName){
     updateStats(); updateQueueDisplay(); injectSenateQueue(); refreshSenateQueue();
     if(!plan.length){log('BUILD',`Template "${templateName}": aucune action à exécuter`,'info');return;}
     log('BUILD',`Template "${templateName}" chargé : ${plan.length} action(s) dans l'ordre exact`,'success');
-    if(buildData.enabled) processAllQueues();
-}
-
-// Applique le même template à TOUTES les villes possédées en une seule fois.
-// Chaque ville reçoit son propre plan d'actions, calculé individuellement
-// selon ses niveaux de bâtiments/recherches actuels (queuePlanForTown est
-// appelé séparément pour chaque tid). Sans cela, le template n'étant appliqué
-// qu'à la ville actuellement affichée, toutes les autres villes n'ont aucune
-// action en file et sont silencieusement ignorées par la routine — ce qui
-// donne l'impression que le bot ne change jamais de ville.
-function applyTemplateToAllTowns(templateName){
-    const template=buildData.templates[templateName];
-    if(!template){log('BUILD',`Template "${templateName}" introuvable`,'error');return;}
-
-    const towns=getAllOwnedTownIds();
-    if(!towns.length){log('BUILD','Aucune ville trouvee','error');return;}
-
-    if(!buildData.actionQueues) buildData.actionQueues={};
-    if(!buildData.activeTemplates) buildData.activeTemplates={};
-
-    let totalActions=0, townsWithActions=0;
-    towns.forEach(tid=>{
-        const plan=queuePlanForTown(tid,template);
-        buildData.activeTemplates[String(tid)]=templateName;
-        buildData.actionQueues[tid]=plan;
-        buildData.queues[tid]=(plan.filter(a=>a.type==='building')).map(a=>({buildingId:a.buildingId,level:a.level}));
-        buildData.researchQueues[tid]=(plan.filter(a=>a.type==='research')).map(a=>a.rid);
-        if(plan.length){ totalActions+=plan.length; townsWithActions++; }
-    });
-
-    saveData();
-    lastTemplateUiTownId=null;
-    syncTemplateUIForCurrentTown(true);
-    renderExecutionQueuePreview();
-    updateStats(); updateQueueDisplay(); injectSenateQueue(); refreshSenateQueue();
-
-    log('BUILD',`Template "${templateName}" applique a ${towns.length} ville(s) — ${townsWithActions} ville(s) avec des actions a effectuer (${totalActions} action(s) au total)`,'success');
     if(buildData.enabled) processAllQueues();
 }
 
